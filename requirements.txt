@@ -1,0 +1,66 @@
+# Core dependencies
+fastapi
+uvicorn
+python-dotenv
+pydantic
+pydantic-settings
+
+# Database
+SQLAlchemy
+psycopg2-binary
+alembic
+
+# Authentication and Security
+python-jose
+passlib
+bcrypt
+python-multipart
+
+# Email
+email-validator
+
+# Logging and Monitoring
+structlog
+python-json-logger
+
+# Rate Limiting
+slowapi
+
+# Testing
+pytest
+pytest-asyncio
+httpx
+
+# Development
+black
+isort
+flake8
+mypy
+
+annotated-types
+anyio
+cffi
+click
+cryptography
+dnspython
+ecdsa
+exceptiongroup
+greenlet
+h11
+idna
+PyJWT
+pyasn1
+pycparser
+PyJWT
+python-jose
+rsa
+six
+sniffio
+starlette
+typing-extensions
+
+# user ID Security
+pycryptodome
+
+#request
+requests
