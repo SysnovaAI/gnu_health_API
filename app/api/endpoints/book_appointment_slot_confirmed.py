@@ -87,7 +87,7 @@ def book_appointment_slot(
         doctor_query = text("""
             SELECT 
                 pp.name AS doctor_name,
-                ghp.specialty
+                ghp.main_specialty
             FROM gnuhealth_healthprofessional ghp
             JOIN party_party pp ON ghp.name = pp.id
             WHERE ghp.id = :healthprof_id

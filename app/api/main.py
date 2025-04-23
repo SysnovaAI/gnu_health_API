@@ -6,11 +6,11 @@ import time
 import logging
 from app.api.config import settings
 from app.api.endpoints import (
-    patient_booked_slot_by_date12, patient_search_doctor_list_by_department12, users, appointments, auth, available_slots_telem_phy,
+    users, appointments, auth, available_slots_telem_phy,
     patient_appointment_cancel_request, patient_appointment_reschedule_request,
     booking_available_appointment_slots, all_specialty_show, doctor_checkavailable_slot_date, otp_verify,
-    prescriptions,
-    patient_booked_slot_by_date as patient_booked_slots
+    prescriptions, book_appointment_slot_confirmed, health, generate_slot,
+    patient_search_doctor_list_by_department, patient_booked_slot_by_date
 )
 
 # Configure logging
@@ -66,17 +66,19 @@ app.include_router(users.router, prefix=settings.API_V1_STR, tags=["Users"])
 app.include_router(appointments.router, prefix=settings.API_V1_STR, tags=["Appointments"])
 app.include_router(available_slots_telem_phy.router, prefix=settings.API_V1_STR, tags=["Appointment Slots"])
 app.include_router(auth.router, prefix="/api", tags=["auth"])
-app.include_router(patient_booked_slots.router, prefix="/api", tags=["patient_booked_slots"])
-app.include_router(patient_booked_slot_by_date12.router, prefix=settings.API_V1_STR, tags=["Patient Appointments"])
+app.include_router(patient_booked_slot_by_date.router, prefix=settings.API_V1_STR, tags=["Patient Appointments"])
 app.include_router(doctor_checkavailable_slot_date.router, prefix=settings.API_V1_STR, tags=["Doctor Appointments"])
 app.include_router(patient_appointment_cancel_request.router, prefix=settings.API_V1_STR, tags=["Appointment Management"])
 app.include_router(patient_appointment_reschedule_request.router, prefix=settings.API_V1_STR, tags=["Appointment Management"])
 app.include_router(booking_available_appointment_slots.router, prefix=settings.API_V1_STR, tags=["Appointment Booking"])
-app.include_router(patient_search_doctor_list_by_department12.router, prefix=settings.API_V1_STR, tags=["Doctor Search"])
+app.include_router(patient_search_doctor_list_by_department.router, prefix=settings.API_V1_STR, tags=["Doctor Search"])
 app.include_router(all_specialty_show.router, prefix=settings.API_V1_STR, tags=["Specialty Information"])
 app.include_router(all_specialty_show.public_router, prefix="/public", tags=["Public API"])
 app.include_router(prescriptions.router, prefix="/api", tags=["prescriptions"])
 app.include_router(otp_verify.router, prefix="/api", tags=["users"])
+app.include_router(book_appointment_slot_confirmed.router, prefix=settings.API_V1_STR, tags=["Appointment Booking"])
+app.include_router(health.router, prefix=settings.API_V1_STR, tags=["Health"])
+app.include_router(generate_slot.router, prefix=settings.API_V1_STR, tags=["Slot Generation"])
 
 # Health check endpoint
 @app.get("/health")
