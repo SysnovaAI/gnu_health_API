@@ -167,6 +167,119 @@ def get_appointment_details(
             if hasattr(diagnosis, 'height') and diagnosis.height:
                 diagnosis_details["height"] = diagnosis.height
             
+        # Build medical history from gnuhealth_patient
+        medical_history = {}
+        if hasattr(patient, 'id'): medical_history["id"] = patient.id
+        if hasattr(patient, 'active'): medical_history["active"] = patient.active
+        if hasattr(patient, 'biological_sex'): medical_history["biological_sex"] = patient.biological_sex
+        if hasattr(patient, 'blood_type'): medical_history["blood_type"] = patient.blood_type
+        if hasattr(patient, 'create_date'): medical_history["create_date"] = patient.create_date.strftime("%Y-%m-%d %H:%M:%S") if patient.create_date else None
+        if hasattr(patient, 'create_uid'): medical_history["create_uid"] = patient.create_uid
+        if hasattr(patient, 'crit_allergic'): medical_history["crit_allergic"] = patient.crit_allergic
+        if hasattr(patient, 'crit_cancer'): medical_history["crit_cancer"] = patient.crit_cancer
+        if hasattr(patient, 'crit_cardio'): medical_history["crit_cardio"] = patient.crit_cardio
+        if hasattr(patient, 'crit_cognitive'): medical_history["crit_cognitive"] = patient.crit_cognitive
+        if hasattr(patient, 'crit_dbt'): medical_history["crit_dbt"] = patient.crit_dbt
+        if hasattr(patient, 'crit_hbp'): medical_history["crit_hbp"] = patient.crit_hbp
+        if hasattr(patient, 'crit_immuno'): medical_history["crit_immuno"] = patient.crit_immuno
+        if hasattr(patient, 'crit_nutrition'): medical_history["crit_nutrition"] = patient.crit_nutrition
+        if hasattr(patient, 'crit_social'): medical_history["crit_social"] = patient.crit_social
+        if hasattr(patient, 'critical_info'): medical_history["critical_info"] = patient.critical_info
+        if hasattr(patient, 'current_address'): medical_history["current_address"] = patient.current_address
+        if hasattr(patient, 'current_insurance'): medical_history["current_insurance"] = patient.current_insurance
+        if hasattr(patient, 'family'): medical_history["family"] = patient.family
+        if hasattr(patient, 'general_info'): medical_history["general_info"] = patient.general_info
+        if hasattr(patient, 'hb'): medical_history["hb"] = patient.hb
+        if hasattr(patient, 'name'): medical_history["name"] = patient.name
+        if hasattr(patient, 'primary_care_doctor'): medical_history["primary_care_doctor"] = patient.primary_care_doctor
+        if hasattr(patient, 'rh'): medical_history["rh"] = patient.rh
+        if hasattr(patient, 'write_date'): medical_history["write_date"] = patient.write_date.strftime("%Y-%m-%d %H:%M:%S") if patient.write_date else None
+        if hasattr(patient, 'write_uid'): medical_history["write_uid"] = patient.write_uid
+        if hasattr(patient, 'dental_schema'): medical_history["dental_schema"] = patient.dental_schema
+        if hasattr(patient, 'dental_schema_primary'): medical_history["dental_schema_primary"] = patient.dental_schema_primary
+        if hasattr(patient, 'use_primary_schema'): medical_history["use_primary_schema"] = patient.use_primary_schema
+        if hasattr(patient, 'breast_self_examination'): medical_history["breast_self_examination"] = patient.breast_self_examination
+        if hasattr(patient, 'colposcopy'): medical_history["colposcopy"] = patient.colposcopy
+        if hasattr(patient, 'colposcopy_last'): medical_history["colposcopy_last"] = patient.colposcopy_last
+        if hasattr(patient, 'fertile'): medical_history["fertile"] = patient.fertile
+        if hasattr(patient, 'full_term'): medical_history["full_term"] = patient.full_term
+        if hasattr(patient, 'mammography'): medical_history["mammography"] = patient.mammography
+        if hasattr(patient, 'mammography_last'): medical_history["mammography_last"] = patient.mammography_last
+        if hasattr(patient, 'menarche'): medical_history["menarche"] = patient.menarche
+        if hasattr(patient, 'menopausal'): medical_history["menopausal"] = patient.menopausal
+        if hasattr(patient, 'menopause'): medical_history["menopause"] = patient.menopause
+        if hasattr(patient, 'pap_test'): medical_history["pap_test"] = patient.pap_test
+        if hasattr(patient, 'pap_test_last'): medical_history["pap_test_last"] = patient.pap_test_last
+        if hasattr(patient, 'age_quit_drinking'): medical_history["age_quit_drinking"] = patient.age_quit_drinking
+        if hasattr(patient, 'age_quit_drugs'): medical_history["age_quit_drugs"] = patient.age_quit_drugs
+        if hasattr(patient, 'age_quit_smoking'): medical_history["age_quit_smoking"] = patient.age_quit_smoking
+        if hasattr(patient, 'age_start_drinking'): medical_history["age_start_drinking"] = patient.age_start_drinking
+        if hasattr(patient, 'age_start_drugs'): medical_history["age_start_drugs"] = patient.age_start_drugs
+        if hasattr(patient, 'age_start_smoking'): medical_history["age_start_smoking"] = patient.age_start_smoking
+        if hasattr(patient, 'alcohol'): medical_history["alcohol"] = patient.alcohol
+        if hasattr(patient, 'alcohol_beer_number'): medical_history["alcohol_beer_number"] = patient.alcohol_beer_number
+        if hasattr(patient, 'alcohol_liquor_number'): medical_history["alcohol_liquor_number"] = patient.alcohol_liquor_number
+        if hasattr(patient, 'alcohol_wine_number'): medical_history["alcohol_wine_number"] = patient.alcohol_wine_number
+        if hasattr(patient, 'anticonceptive'): medical_history["anticonceptive"] = patient.anticonceptive
+        if hasattr(patient, 'car_child_safety'): medical_history["car_child_safety"] = patient.car_child_safety
+        if hasattr(patient, 'car_revision'): medical_history["car_revision"] = patient.car_revision
+        if hasattr(patient, 'car_seat_belt'): medical_history["car_seat_belt"] = patient.car_seat_belt
+        if hasattr(patient, 'coffee'): medical_history["coffee"] = patient.coffee
+        if hasattr(patient, 'coffee_cups'): medical_history["coffee_cups"] = patient.coffee_cups
+        if hasattr(patient, 'diet'): medical_history["diet"] = patient.diet
+        if hasattr(patient, 'diet_belief'): medical_history["diet_belief"] = patient.diet_belief
+        if hasattr(patient, 'diet_info'): medical_history["diet_info"] = patient.diet_info
+        if hasattr(patient, 'drug_iv'): medical_history["drug_iv"] = patient.drug_iv
+        if hasattr(patient, 'drug_usage'): medical_history["drug_usage"] = patient.drug_usage
+        if hasattr(patient, 'eats_alone'): medical_history["eats_alone"] = patient.eats_alone
+        if hasattr(patient, 'ex_alcoholic'): medical_history["ex_alcoholic"] = patient.ex_alcoholic
+        if hasattr(patient, 'ex_drug_addict'): medical_history["ex_drug_addict"] = patient.ex_drug_addict
+        if hasattr(patient, 'ex_smoker'): medical_history["ex_smoker"] = patient.ex_smoker
+        if hasattr(patient, 'exercise'): medical_history["exercise"] = patient.exercise
+        if hasattr(patient, 'exercise_minutes_day'): medical_history["exercise_minutes_day"] = patient.exercise_minutes_day
+        if hasattr(patient, 'first_sexual_encounter'): medical_history["first_sexual_encounter"] = patient.first_sexual_encounter
+        if hasattr(patient, 'helmet'): medical_history["helmet"] = patient.helmet
+        if hasattr(patient, 'home_safety'): medical_history["home_safety"] = patient.home_safety
+        if hasattr(patient, 'lifestyle_info'): medical_history["lifestyle_info"] = patient.lifestyle_info
+        if hasattr(patient, 'motorcycle_rider'): medical_history["motorcycle_rider"] = patient.motorcycle_rider
+        if hasattr(patient, 'number_of_meals'): medical_history["number_of_meals"] = patient.number_of_meals
+        if hasattr(patient, 'prostitute'): medical_history["prostitute"] = patient.prostitute
+        if hasattr(patient, 'salt'): medical_history["salt"] = patient.salt
+        if hasattr(patient, 'second_hand_smoker'): medical_history["second_hand_smoker"] = patient.second_hand_smoker
+        if hasattr(patient, 'sex_anal'): medical_history["sex_anal"] = patient.sex_anal
+        if hasattr(patient, 'sex_oral'): medical_history["sex_oral"] = patient.sex_oral
+        if hasattr(patient, 'sex_with_prostitutes'): medical_history["sex_with_prostitutes"] = patient.sex_with_prostitutes
+        if hasattr(patient, 'sexual_partners'): medical_history["sexual_partners"] = patient.sexual_partners
+        if hasattr(patient, 'sexual_partners_number'): medical_history["sexual_partners_number"] = patient.sexual_partners_number
+        if hasattr(patient, 'sexual_practices'): medical_history["sexual_practices"] = patient.sexual_practices
+        if hasattr(patient, 'sexual_preferences'): medical_history["sexual_preferences"] = patient.sexual_preferences
+        if hasattr(patient, 'sexuality_info'): medical_history["sexuality_info"] = patient.sexuality_info
+        if hasattr(patient, 'sleep_during_daytime'): medical_history["sleep_during_daytime"] = patient.sleep_during_daytime
+        if hasattr(patient, 'sleep_hours'): medical_history["sleep_hours"] = patient.sleep_hours
+        if hasattr(patient, 'smoking'): medical_history["smoking"] = patient.smoking
+        if hasattr(patient, 'smoking_number'): medical_history["smoking_number"] = patient.smoking_number
+        if hasattr(patient, 'soft_drinks'): medical_history["soft_drinks"] = patient.soft_drinks
+        if hasattr(patient, 'traffic_laws'): medical_history["traffic_laws"] = patient.traffic_laws
+        if hasattr(patient, 'vegetarian_type'): medical_history["vegetarian_type"] = patient.vegetarian_type
+        if hasattr(patient, 'domestic_violence'): medical_history["domestic_violence"] = patient.domestic_violence
+        if hasattr(patient, 'drug_addiction'): medical_history["drug_addiction"] = patient.drug_addiction
+        if hasattr(patient, 'hostile_area'): medical_history["hostile_area"] = patient.hostile_area
+        if hasattr(patient, 'hours_outside'): medical_history["hours_outside"] = patient.hours_outside
+        if hasattr(patient, 'prison_current'): medical_history["prison_current"] = patient.prison_current
+        if hasattr(patient, 'prison_past'): medical_history["prison_past"] = patient.prison_past
+        if hasattr(patient, 'relative_in_prison'): medical_history["relative_in_prison"] = patient.relative_in_prison
+        if hasattr(patient, 'school_withdrawal'): medical_history["school_withdrawal"] = patient.school_withdrawal
+        if hasattr(patient, 'ses_notes'): medical_history["ses_notes"] = patient.ses_notes
+        if hasattr(patient, 'sexual_abuse'): medical_history["sexual_abuse"] = patient.sexual_abuse
+        if hasattr(patient, 'single_parent'): medical_history["single_parent"] = patient.single_parent
+        if hasattr(patient, 'teenage_pregnancy'): medical_history["teenage_pregnancy"] = patient.teenage_pregnancy
+        if hasattr(patient, 'working_children'): medical_history["working_children"] = patient.working_children
+        if hasattr(patient, 'works_at_home'): medical_history["works_at_home"] = patient.works_at_home
+        if hasattr(patient, 'amputee'): medical_history["amputee"] = patient.amputee
+        if hasattr(patient, 'amputee_since'): medical_history["amputee_since"] = patient.amputee_since
+        if hasattr(patient, 'disability'): medical_history["disability"] = patient.disability
+        if hasattr(patient, 'uxo'): medical_history["uxo"] = patient.uxo
+
         # Format the response
         response = {
             "appointment_id": appointment.id,
@@ -177,7 +290,8 @@ def get_appointment_details(
                 "mobile_number": doctor.mobile_number,
                 "email": doctor.email
             },
-            "Diagnosis": diagnosis_details if diagnosis_details else None
+            "Diagnosis": diagnosis_details if diagnosis_details else None,
+            "medical_history": medical_history
         }
         
         return JSONResponse(
