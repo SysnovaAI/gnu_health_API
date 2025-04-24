@@ -280,6 +280,56 @@ def get_appointment_details(
         if hasattr(patient, 'disability'): medical_history["disability"] = patient.disability
         if hasattr(patient, 'uxo'): medical_history["uxo"] = patient.uxo
 
+        # Get medical tests and medicines
+        med_tests = {}
+        medicines = {}
+        
+        # Get all tests and medicines in a single query using joins
+        prescription_query = text("""
+            SELECT 
+                gpl.medicament,
+                gm.active_component,
+                gpl.test,
+                gltt.name AS test_name
+            FROM gnuhealth_prescription_order gpo
+            JOIN gnuhealth_prescription_line gpl ON gpl.name = gpo.id
+            LEFT JOIN gnuhealth_medicament gm ON gm.id = gpl.medicament
+            LEFT JOIN gnuhealth_lab_test_type gltt ON gltt.id = gpl.test
+            WHERE gpo.appointment_id = :appointment_id
+        """)
+        
+        prescriptions = db.execute(prescription_query, {"appointment_id": request.appointment_id}).fetchall()
+        
+        # Add tests and medicines with sequential keys
+        test_idx = 1
+        med_idx = 1
+        
+        for prescription in prescriptions:
+            # Add test if it exists
+            if prescription.test_name:
+                test_key = f"test_name_{test_idx}"
+                med_tests[test_key] = prescription.test_name
+                test_idx += 1
+                
+            # Add medicine if it exists
+            if prescription.active_component:
+                med_key = f"medicine_{med_idx}"
+                medicines[med_key] = prescription.active_component
+                med_idx += 1
+
+        # Get remarks from gnuhealth_prescription_order
+        remarks = {}
+        remarks_query = text("""
+            SELECT notes
+            FROM gnuhealth_prescription_order
+            WHERE appointment_id = :appointment_id
+        """)
+        
+        prescription_order = db.execute(remarks_query, {"appointment_id": request.appointment_id}).fetchone()
+        
+        if prescription_order and prescription_order.notes:
+            remarks["text"] = prescription_order.notes
+
         # Format the response
         response = {
             "appointment_id": appointment.id,
@@ -291,7 +341,10 @@ def get_appointment_details(
                 "email": doctor.email
             },
             "Diagnosis": diagnosis_details if diagnosis_details else None,
-            "medical_history": medical_history
+            "medical_history": medical_history,
+            "med_tests": med_tests if med_tests else None,
+            "medicine": medicines if medicines else None,
+            "remarks": remarks if remarks else None
         }
         
         return JSONResponse(
