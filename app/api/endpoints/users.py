@@ -17,6 +17,8 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 from ..models.base import get_db  # Import database session
 from passlib.context import CryptContext
+from ..models.send_email import send_email_notification
+from ..models import generate_otp
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -349,9 +351,11 @@ def register_user(user_type: str, data: dict, db: Session = Depends(get_db)):
         print("===================================================================================")
         print("User_id :", user_id)
         # otp generare
-        from ..models import generate_otp
         otp = generate_otp.generate_secure_otp(db, user_id)
+        send_email_notification(email, "OTP", f"Your opt code is : {otp}")
         print(otp)
+
+        ###########################################################################################
 
 
         # Create a 256-bit AES key from a password using SHA-256

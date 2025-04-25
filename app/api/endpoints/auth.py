@@ -48,8 +48,11 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     
+    ###############################################################
     if user.otp_verified != "true":
         return {"user": "Registration is not Completed"}
+    
+    ##############################################################
 
     if not verify_password(form_data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid password")
