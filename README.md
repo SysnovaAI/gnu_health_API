@@ -243,3 +243,9 @@ localhost:8000/api/appointments_new
   "appointment_date": "2025-04-13 12:20:00",
   "healthprof": 12
 }
+
+/api/book-slot
+{
+  "appointment_id": 580
+}
+

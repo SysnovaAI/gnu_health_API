@@ -6,10 +6,10 @@ import time
 import logging
 from app.api.config import settings
 from app.api.endpoints import (
-    users, appointments, auth, available_slots_telem_phy,
+    book_appointment_slot_confirmedOLD, users, appointments, auth, available_slots_telem_phy,
     patient_appointment_cancel_request, patient_appointment_reschedule_request,
     booking_available_appointment_slots, all_specialty_show, doctor_checkavailable_slot_date, otp_verify,
-    prescriptions, book_appointment_slot_confirmed, health, generate_slot,
+    prescriptions, health, generate_slot,
     patient_search_doctor_list_by_department, patient_booked_slot_by_date,
     prescription_test_catagory, prescription_save
 )
@@ -78,7 +78,7 @@ app.include_router(all_specialty_show.public_router, prefix="/public", tags=["Pu
 app.include_router(prescriptions.router, prefix="/api", tags=["prescriptions"])
 app.include_router(prescription_save.router, prefix="/api", tags=["prescription_save"])
 app.include_router(otp_verify.router, prefix="/api", tags=["users"])
-app.include_router(book_appointment_slot_confirmed.router, prefix=settings.API_V1_STR, tags=["Appointment Booking"])
+app.include_router(book_appointment_slot_confirmedOLD.router, prefix=settings.API_V1_STR, tags=["Appointment Booking"])
 app.include_router(health.router, prefix=settings.API_V1_STR, tags=["Health"])
 app.include_router(generate_slot.router, prefix=settings.API_V1_STR, tags=["Slot Generation"])
 app.include_router(prescription_test_catagory.public_router, prefix="/public", tags=["Test Categories"])

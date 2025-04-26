@@ -67,11 +67,9 @@ def book_appointment_slot(
     
     # 4. Update the appointment with patient information
     try:
-        x="APP2025/"+ str(booking.appointment_id)
         update_query = text("""
             UPDATE gnuhealth_appointment
             SET patient = :patient_id,
-                name  = :x,           
                 state = 'confirmed',
                 write_date = :write_date,
                 write_uid = :write_uid
@@ -80,11 +78,9 @@ def book_appointment_slot(
         
         db.execute(update_query, {
             "patient_id": patient_id,
-            "x": x,
             "write_date": datetime.now(),
             "write_uid": user_id,
-            "appointment_id": booking.appointment_id,
-            
+            "appointment_id": booking.appointment_id
         })
         
         # Get doctor info for the response

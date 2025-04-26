@@ -91,7 +91,38 @@ def get_appointment_details(
         """)
         
         diagnosis = db.execute(diagnosis_query, {"appointment_id": request.appointment_id}).fetchone()
-            
+        
+        # If no diagnosis exists, create a blank row
+        if not diagnosis:
+            create_diagnosis_query = text("""
+                INSERT INTO gnuhealth_patient_evaluation (
+                    appointment,
+                    chief_complaint,
+                    systolic,
+                    glycemia,
+                    weight,
+                    height,
+                    discharge_reason,
+                    evaluation_start
+                )
+                VALUES (
+                    :appointment_id,
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL,
+                    'routine',  -- Default value for discharge_reason
+                    CURRENT_TIMESTAMP  -- Current timestamp for evaluation_start
+                )
+                RETURNING id, chief_complaint, systolic, glycemia, weight, height
+            """)
+            diagnosis = db.execute(
+                create_diagnosis_query,
+                {"appointment_id": request.appointment_id}
+            ).fetchone()
+            db.commit()
+
         # Get patient details with all information from gnuhealth_patient
         patient_query = text("""
             SELECT 
@@ -326,15 +357,16 @@ def get_appointment_details(
         
         # Get all tests and medicines in a single query using joins
         prescription_query = text("""
-            SELECT 
+            SELECT DISTINCT
                 gpl.medicament,
                 gm.active_component,
-                gpl.test,
+                gplt.id as test,
                 gltt.name AS test_name
             FROM gnuhealth_prescription_order gpo
-            JOIN gnuhealth_prescription_line gpl ON gpl.name = gpo.id
+            left join gnuhealth_patient_lab_test gplt on gpo.id = gplt.prescription
+            left JOIN gnuhealth_prescription_line gpl ON gpo.id = gpl.name
             LEFT JOIN gnuhealth_medicament gm ON gm.id = gpl.medicament
-            LEFT JOIN gnuhealth_lab_test_type gltt ON gltt.id = gpl.test
+            LEFT JOIN gnuhealth_lab_test_type gltt ON gplt.name = gltt.id
             WHERE gpo.appointment_id = :appointment_id
         """)
         
@@ -344,6 +376,9 @@ def get_appointment_details(
         test_idx = 1
         med_idx = 1
         
+        # Track unique medicines to avoid duplicates
+        unique_medicines = set()
+        
         for prescription in prescriptions:
             # Add test if it exists
             if prescription.test_name:
@@ -351,10 +386,11 @@ def get_appointment_details(
                 med_tests[test_key] = prescription.test_name
                 test_idx += 1
                 
-            # Add medicine if it exists
-            if prescription.active_component:
+            # Add medicine if it exists and not already added
+            if prescription.active_component and prescription.active_component not in unique_medicines:
                 med_key = f"medicine_{med_idx}"
                 medicines[med_key] = prescription.active_component
+                unique_medicines.add(prescription.active_component)
                 med_idx += 1
 
         # Get remarks from gnuhealth_prescription_order
