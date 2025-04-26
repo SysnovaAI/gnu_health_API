@@ -349,9 +349,16 @@ def register_user(user_type: str, data: dict, db: Session = Depends(get_db)):
         print("===================================================================================")
         print("User_id :", user_id)
         # otp generare
+        from ..models import send_email
         from ..models import generate_otp
         otp = generate_otp.generate_secure_otp(db, user_id)
         print(otp)
+        try:
+            email_response = send_email.send_email_notification(email, "OTP",f"Your OTP is {otp}")
+            print("Email sent successfully")
+        except Exception as e:
+            print("Email sending failed")
+            print(e)
 
 
         # Create a 256-bit AES key from a password using SHA-256

@@ -25,6 +25,24 @@ def save_prescription(
     user: dict = Depends(get_current_user)
 ):
     try:
+        # First get the patient ID from the appointment
+        appointment_query = text("""
+            SELECT 
+                ga.id,
+                ga.patient,
+                ga.healthprof
+            FROM gnuhealth_appointment ga
+            WHERE ga.id = :appointment_id
+        """)
+        
+        appointment = db.execute(appointment_query, {"appointment_id": appointment_id}).fetchone()
+        
+        if not appointment:
+            return JSONResponse(
+                content={"message": "Appointment not found"},
+                status_code=404
+            )
+
         # Generate prescription ID
         current_year = datetime.now().year
         prescription_id = f"PRES {current_year}/{appointment_id}"
@@ -37,17 +55,29 @@ def save_prescription(
         existing_order = db.execute(check_query, {"appointment_id": appointment_id}).fetchone()
 
         if not existing_order:
-            # Create new prescription order
+            # Create new prescription order with patient information
             create_query = text("""
-                INSERT INTO gnuhealth_prescription_order (appointment_id, prescription_id)
-                VALUES (:appointment_id, :prescription_id)
+                INSERT INTO gnuhealth_prescription_order (
+                    appointment_id, 
+                    prescription_id,
+                    patient,
+                    healthprof
+                )
+                VALUES (
+                    :appointment_id, 
+                    :prescription_id,
+                    :patient,
+                    :healthprof
+                )
                 RETURNING id
             """)
             result = db.execute(
                 create_query,
                 {
                     "appointment_id": appointment_id,
-                    "prescription_id": prescription_id
+                    "prescription_id": prescription_id,
+                    "patient": appointment.patient,
+                    "healthprof": appointment.healthprof
                 }
             ).fetchone()
         else:
@@ -79,30 +109,73 @@ def save_prescription(
             systolic = blood_pressure[0] if blood_pressure else None
             diastolic = blood_pressure[1] if len(blood_pressure) > 1 else None
 
-            diagnosis_update_query = text("""
-                UPDATE gnuhealth_patient_evaluation
-                SET 
-                    chief_complaint = COALESCE(:complain, chief_complaint),
-                    systolic = COALESCE(:systolic, systolic),
-                    diastolic = COALESCE(:diastolic, diastolic),
-                    glycemia = COALESCE(:sugar_level, glycemia),
-                    weight = COALESCE(:weight, weight),
-                    height = COALESCE(:height, height)
+            # First check if diagnosis exists
+            check_diagnosis_query = text("""
+                SELECT id FROM gnuhealth_patient_evaluation
                 WHERE appointment = :appointment_id
             """)
-            
-            db.execute(
-                diagnosis_update_query,
-                {
-                    "appointment_id": appointment_id,
-                    "complain": update_data.Diagnosis.get('complain'),
-                    "systolic": systolic,
-                    "diastolic": diastolic,
-                    "sugar_level": update_data.Diagnosis.get('sugar_level'),
-                    "weight": update_data.Diagnosis.get('weight'),
-                    "height": update_data.Diagnosis.get('height')
-                }
-            )
+            diagnosis = db.execute(check_diagnosis_query, {"appointment_id": appointment_id}).fetchone()
+
+            if not diagnosis:
+                # Create new diagnosis if it doesn't exist
+                create_diagnosis_query = text("""
+                    INSERT INTO gnuhealth_patient_evaluation (
+                        appointment,
+                        chief_complaint,
+                        systolic,
+                        diastolic,
+                        glycemia,
+                        weight,
+                        height
+                    )
+                    VALUES (
+                        :appointment_id,
+                        :complain,
+                        :systolic,
+                        :diastolic,
+                        :sugar_level,
+                        :weight,
+                        :height
+                    )
+                """)
+                db.execute(
+                    create_diagnosis_query,
+                    {
+                        "appointment_id": appointment_id,
+                        "complain": update_data.Diagnosis.get('complain'),
+                        "systolic": systolic,
+                        "diastolic": diastolic,
+                        "sugar_level": update_data.Diagnosis.get('sugar_level'),
+                        "weight": update_data.Diagnosis.get('weight'),
+                        "height": update_data.Diagnosis.get('height')
+                    }
+                )
+            else:
+                # Update existing diagnosis - use provided values even if they're null
+                diagnosis_update_query = text("""
+                    UPDATE gnuhealth_patient_evaluation
+                    SET 
+                        chief_complaint = :complain,
+                        systolic = :systolic,
+                        diastolic = :diastolic,
+                        glycemia = :sugar_level,
+                        weight = :weight,
+                        height = :height
+                    WHERE appointment = :appointment_id
+                """)
+                
+                db.execute(
+                    diagnosis_update_query,
+                    {
+                        "appointment_id": appointment_id,
+                        "complain": update_data.Diagnosis.get('complain'),
+                        "systolic": systolic,
+                        "diastolic": diastolic,
+                        "sugar_level": update_data.Diagnosis.get('sugar_level'),
+                        "weight": update_data.Diagnosis.get('weight'),
+                        "height": update_data.Diagnosis.get('height')
+                    }
+                )
 
         # Update medical tests and medicines if provided
         if update_data.med_tests or update_data.medicine:
@@ -116,15 +189,40 @@ def save_prescription(
             prescription_line = db.execute(prescription_line_query, {"appointment_id": appointment_id}).fetchone()
 
             if not prescription_line:
-                # Create new prescription line if it doesn't exist
+                # Create a default medicine entry if none exists
+                default_med_query = text("""
+                    SELECT id FROM gnuhealth_medicament 
+                    WHERE active_component = 'Default Medicine'
+                """)
+                default_med = db.execute(default_med_query).fetchone()
+
+                if not default_med:
+                    # Create default medicine if it doesn't exist
+                    create_default_med_query = text("""
+                        INSERT INTO gnuhealth_medicament (active_component)
+                        VALUES ('Default Medicine')
+                        RETURNING id
+                    """)
+                    default_med = db.execute(create_default_med_query).fetchone()
+
+                # Create new prescription line with default medicine
                 create_line_query = text("""
-                    INSERT INTO gnuhealth_prescription_line (name)
-                    VALUES (:prescription_order_id)
+                    INSERT INTO gnuhealth_prescription_line (
+                        name,
+                        medicament
+                    )
+                    VALUES (
+                        :prescription_order_id,
+                        :medicament_id
+                    )
                     RETURNING id
                 """)
                 prescription_line = db.execute(
                     create_line_query,
-                    {"prescription_order_id": result.id}
+                    {
+                        "prescription_order_id": result.id,
+                        "medicament_id": default_med.id
+                    }
                 ).fetchone()
 
             # Update tests if provided
@@ -208,7 +306,7 @@ def save_prescription(
         if update_data.remarks:
             remarks_update_query = text("""
                 UPDATE gnuhealth_prescription_order
-                SET notes = COALESCE(:text, notes)
+                SET notes = :text
                 WHERE appointment_id = :appointment_id
             """)
             

@@ -25,6 +25,7 @@ def send_email_notification(to_email: str, subject: str, text_content: str):
         "content-type": "application/json",
     }
     response = requests.post(url, headers=headers, data=payload)
+    return response
 
 
 # send_email_notification("bikas.zaman@sysnova.com", "GNU Health Project", "This email is send from the Brevo.")
