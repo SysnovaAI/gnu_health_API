@@ -30,19 +30,6 @@ class LabTestTypeResponse(BaseModel):
     message: str
     test_types: List[LabTestType]
 
-# Pydantic model for Lab Test Criteria Response
-class LabTestCriteria(BaseModel):
-    id: int
-    code: str | None
-    gnuhealth_lab_id: int | None
-    name: str
-    test_type_id: int
-
-class LabTestCriteriaResponse(BaseModel):
-    success: bool
-    message: str
-    criteria: List[LabTestCriteria]
-
 def get_lab_test_types(db: Session) -> dict:
     """
     Helper function to get all lab test types
@@ -133,54 +120,3 @@ def get_all_lab_test_types_public(db: Session = Depends(get_db)):
     This is a public endpoint that doesn't require authentication.
     """
     return get_lab_test_types(db)
-
-def get_lab_test_criteria_by_type(db: Session, test_type_id: int) -> dict:
-    """
-    Helper function to get all criteria for a given test type id
-    """
-    try:
-        query = text("""
-            SELECT 
-                id, 
-                code, 
-                gnuhealth_lab_id, 
-                name, 
-                test_type_id
-            FROM gnuhealth_lab_test_critearea
-            WHERE test_type_id = :test_type_id
-            ORDER BY sequence, name
-        """)
-        results = db.execute(query, {"test_type_id": test_type_id}).fetchall()
-        if not results:
-            return {
-                "success": True,
-                "message": "No criteria found for the given test type id",
-                "criteria": []
-            }
-        criteria = [
-            {
-                "id": row.id,
-                "code": row.code,
-                "gnuhealth_lab_id": row.gnuhealth_lab_id,
-                "name": row.name,
-                "test_type_id": row.test_type_id
-            } for row in results
-        ]
-        return {
-            "success": True,
-            "message": f"Found {len(criteria)} criteria for test type id {test_type_id}",
-            "criteria": criteria
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error retrieving lab test criteria: {str(e)}"
-        )
-
-@public_router.get("/test-critearea", response_model=LabTestCriteriaResponse)
-def get_lab_test_criteria_public(test_type_id: int, db: Session = Depends(get_db)):
-    """
-    Get all criteria for a given test type id from gnuhealth_lab_test_critearea table.
-    This is a public endpoint that doesn't require authentication.
-    """
-    return get_lab_test_criteria_by_type(db, test_type_id)

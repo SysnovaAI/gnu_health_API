@@ -7,6 +7,11 @@ from .appointments import get_current_user
 from pydantic import BaseModel
 import uuid
 from datetime import datetime
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -20,6 +25,8 @@ def get_appointment_details(
     user: dict = Depends(get_current_user)
 ):
     try:
+        logger.debug(f"Starting prescription-header for appointment_id: {request.appointment_id}")
+        
         # First get the patient ID from the appointment
         appointment_query = text("""
             SELECT 
@@ -33,49 +40,158 @@ def get_appointment_details(
         appointment = db.execute(appointment_query, {"appointment_id": request.appointment_id}).fetchone()
         
         if not appointment:
+            logger.error(f"Appointment not found: {request.appointment_id}")
             return JSONResponse(
                 content={"message": "Appointment not found"},
                 status_code=404
             )
 
-        # Check if prescription order exists, if not create it
-        check_order_query = text("""
-            SELECT id FROM gnuhealth_prescription_order 
-            WHERE appointment_id = :appointment_id
-        """)
-        existing_order = db.execute(check_order_query, {"appointment_id": request.appointment_id}).fetchone()
+        logger.debug(f"Found appointment: {appointment.id}")
 
-        if not existing_order:
-            # Generate prescription ID
-            current_year = datetime.now().year
-            prescription_id = f"PRES {current_year}/{request.appointment_id}"
+        # Generate prescription ID
+        current_year = datetime.now().year
+        prescription_id = f"PRES {current_year}/{request.appointment_id}"
+        logger.debug(f"Generated prescription_id: {prescription_id}")
 
-            # Create new prescription order
-            create_order_query = text("""
-                INSERT INTO gnuhealth_prescription_order (
-                    appointment_id, 
-                    prescription_id,
-                    patient,
-                    healthprof
+        try:
+            # First check if default medicine exists
+            check_medicine_query = text("""
+                SELECT id FROM gnuhealth_medicament 
+                WHERE active_component = 'Default Medicine'
+            """)
+            medicine_result = db.execute(check_medicine_query).fetchone()
+
+            if not medicine_result:
+                # Generate a unique code for the party
+                party_code = f"MED_{str(uuid.uuid4())[:8]}"
+                
+                # Create party entry for the medicine
+                create_party_query = text("""
+                    INSERT INTO party_party (name, code)
+                    VALUES (:name, :code)
+                    RETURNING id
+                """)
+                party_result = db.execute(
+                    create_party_query,
+                    {
+                        "name": "Default Medicine",
+                        "code": party_code
+                    }
+                ).fetchone()
+                
+                if not party_result:
+                    logger.error("Failed to create party entry")
+                    return JSONResponse(
+                        content={"message": "Failed to create party entry"},
+                        status_code=500
+                    )
+
+                # Create medicine entry
+                create_medicine_query = text("""
+                    INSERT INTO gnuhealth_medicament (name, active_component)
+                    VALUES (:party_id, 'Default Medicine')
+                    RETURNING id
+                """)
+                medicine_result = db.execute(
+                    create_medicine_query,
+                    {"party_id": party_result.id}
+                ).fetchone()
+
+                if not medicine_result:
+                    logger.error("Failed to create medicine entry")
+                    return JSONResponse(
+                        content={"message": "Failed to create medicine entry"},
+                        status_code=500
+                    )
+
+            # Create prescription order and line in a single transaction
+            create_query = text("""
+                WITH new_order AS (
+                    INSERT INTO gnuhealth_prescription_order (
+                        appointment_id, 
+                        prescription_id,
+                        patient,
+                        healthprof,
+                        create_date,
+                        create_uid,
+                        prescription_date,
+                        user_id,
+                        write_date,
+                        write_uid
+                    )
+                    VALUES (
+                        :appointment_id, 
+                        :prescription_id,
+                        :patient,
+                        :healthprof,
+                        now(),
+                        :healthprof,
+                        now(),
+                        :healthprof,
+                        now(),
+                        :healthprof
+                    )
+                    RETURNING id
                 )
-                VALUES (
-                    :appointment_id, 
-                    :prescription_id,
-                    :patient,
-                    :healthprof
+                INSERT INTO gnuhealth_prescription_line (
+                    name,
+                    create_date,
+                    create_uid,
+                    start_treatment,
+                    review,
+                    write_date,
+                    write_uid,
+                    medicament
                 )
+                SELECT 
+                    id,
+                    now(),
+                    :healthprof,
+                    now(),
+                    now(),
+                    now(),
+                    :healthprof,
+                    :medicament_id
+                FROM new_order
                 RETURNING id
             """)
-            db.execute(
-                create_order_query,
+            
+            logger.debug("Executing create query with params:")
+            logger.debug(f"appointment_id: {request.appointment_id}")
+            logger.debug(f"prescription_id: {prescription_id}")
+            logger.debug(f"patient: {appointment.patient}")
+            logger.debug(f"healthprof: {appointment.healthprof}")
+            logger.debug(f"medicament_id: {medicine_result.id}")
+            
+            result = db.execute(
+                create_query,
                 {
                     "appointment_id": request.appointment_id,
                     "prescription_id": prescription_id,
                     "patient": appointment.patient,
-                    "healthprof": appointment.healthprof
+                    "healthprof": appointment.healthprof,
+                    "medicament_id": medicine_result.id
                 }
+            ).fetchone()
+            
+            if result:
+                logger.debug(f"Successfully created prescription with ID: {result.id}")
+                db.commit()
+            else:
+                logger.error("Failed to create prescription - no result returned")
+                db.rollback()
+                return JSONResponse(
+                    content={"message": "Failed to create prescription order and line"},
+                    status_code=500
+                )
+
+        except Exception as e:
+            logger.error(f"Database error: {str(e)}")
+            db.rollback()
+            return JSONResponse(
+                content={"message": f"Database error: {str(e)}"},
+                status_code=500
             )
-            db.commit()
 
         # Get diagnosis information from patient evaluation
         diagnosis_query = text("""

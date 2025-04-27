@@ -8,6 +8,11 @@ from datetime import datetime
 from pydantic import BaseModel
 from typing import Dict, Optional
 import uuid
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -43,9 +48,10 @@ def save_prescription(
                 status_code=404
             )
 
-        # Generate prescription ID
+        # Generate prescription ID and appointment name
         current_year = datetime.now().year
         prescription_id = f"PRES {current_year}/{appointment_id}"
+        appointment_name = f"APP {current_year}/{appointment_id}"
 
         # Check if prescription order exists
         check_query = text("""
@@ -58,15 +64,29 @@ def save_prescription(
             # Create new prescription order with patient information
             create_query = text("""
                 INSERT INTO gnuhealth_prescription_order (
+                    appointment_name,
                     appointment_id, 
                     prescription_id,
                     patient,
-                    healthprof
+                    healthprof,
+                    create_date,
+                    create_uid,
+                    prescription_date,
+                    user_id,
+                    write_date,
+                    write_uid
                 )
                 VALUES (
+                    :appointment_name,
                     :appointment_id, 
                     :prescription_id,
                     :patient,
+                    :healthprof,
+                    CURRENT_TIMESTAMP,
+                    :healthprof,
+                    CURRENT_TIMESTAMP,
+                    :healthprof,
+                    CURRENT_TIMESTAMP,
                     :healthprof
                 )
                 RETURNING id
@@ -74,6 +94,7 @@ def save_prescription(
             result = db.execute(
                 create_query,
                 {
+                    "appointment_name": appointment_name,
                     "appointment_id": appointment_id,
                     "prescription_id": prescription_id,
                     "patient": appointment.patient,
@@ -84,15 +105,21 @@ def save_prescription(
             # Update existing prescription order
             update_query = text("""
                 UPDATE gnuhealth_prescription_order
-                SET prescription_id = :prescription_id
+                SET 
+                    appointment_name = :appointment_name,
+                    prescription_id = :prescription_id,
+                    write_date = CURRENT_TIMESTAMP,
+                    write_uid = :healthprof
                 WHERE appointment_id = :appointment_id
                 RETURNING id
             """)
             result = db.execute(
                 update_query,
                 {
+                    "appointment_name": appointment_name,
                     "prescription_id": prescription_id,
-                    "appointment_id": appointment_id
+                    "appointment_id": appointment_id,
+                    "healthprof": appointment.healthprof
                 }
             ).fetchone()
 
@@ -178,113 +205,184 @@ def save_prescription(
                 )
 
         # Update medical tests and medicines if provided
-        if update_data.med_tests or update_data.medicine:
-            # Handle tests if provided
-            if update_data.med_tests:
-                for test_key, test_name in update_data.med_tests.items():
-                    # Check if test type exists
-                    check_test_query = text("""
-                        SELECT id FROM gnuhealth_lab_test_type 
-                        WHERE name = :test_name
-                    """)
-                    test_type = db.execute(check_test_query, {"test_name": test_name}).fetchone()
+        if update_data.med_tests is not None or update_data.medicine is not None:
+            try:
+                # First get existing prescription lines
+                get_existing_lines_query = text("""
+                    SELECT gpl.id, gpl.medicament, gplt.id as test_id
+                    FROM gnuhealth_prescription_line gpl
+                    LEFT JOIN gnuhealth_patient_lab_test gplt ON gpl.id = gplt.prescription
+                    WHERE gpl.name = :prescription_order_id
+                """)
+                existing_lines = db.execute(
+                    get_existing_lines_query,
+                    {"prescription_order_id": result.id}
+                ).fetchall()
 
-                    if not test_type:
-                        # Generate a unique code for the test
-                        test_code = f"TEST_{str(uuid.uuid4())[:8]}"
+                logger.debug(f"Found {len(existing_lines)} existing prescription lines")
+
+                # Handle tests if provided
+                if update_data.med_tests is not None:
+                    logger.debug("Processing test updates")
+                    
+                    # First, delete all existing tests for this prescription
+                    delete_all_tests_query = text("""
+                        DELETE FROM gnuhealth_patient_lab_test
+                        WHERE prescription = :prescription_id
+                    """)
+                    db.execute(
+                        delete_all_tests_query,
+                        {"prescription_id": result.id}
+                    )
+                    logger.debug("Deleted all existing tests")
+                    
+                    if update_data.med_tests:  # If new tests are provided
+                        # Get unique test names to avoid duplicates
+                        unique_test_names = list(set(update_data.med_tests.values()))
+                        logger.debug(f"Unique test names: {unique_test_names}")
                         
-                        # Create new test type
-                        create_test_query = text("""
-                            INSERT INTO gnuhealth_lab_test_type (
-                                name,
-                                code
-                            )
-                            VALUES (
-                                :test_name,
-                                :test_code
-                            )
-                            RETURNING id
-                        """)
-                        test_type = db.execute(
-                            create_test_query,
-                            {
-                                "test_name": test_name,
-                                "test_code": test_code
-                            }
-                        ).fetchone()
+                        # Add new tests
+                        for test_name in unique_test_names:
+                            # Check if test type exists
+                            check_test_query = text("""
+                                SELECT id FROM gnuhealth_lab_test_type 
+                                WHERE name = :test_name
+                            """)
+                            test_type = db.execute(check_test_query, {"test_name": test_name}).fetchone()
 
-                    # Create new patient lab test entry
-                    create_patient_test_query = text("""
-                        INSERT INTO gnuhealth_patient_lab_test (
-                            prescription,
-                            name
-                        )
-                        VALUES (
-                            :prescription_id,
-                            :test_id
-                        )
+                            if not test_type:
+                                # Generate a unique code for the test
+                                test_code = f"TEST_{str(uuid.uuid4())[:8]}"
+                                logger.debug(f"Creating new test type: {test_name} with code {test_code}")
+                                
+                                # Create new test type
+                                create_test_query = text("""
+                                    INSERT INTO gnuhealth_lab_test_type (
+                                        name,
+                                        code
+                                    )
+                                    VALUES (
+                                        :test_name,
+                                        :test_code
+                                    )
+                                    RETURNING id
+                                """)
+                                test_type = db.execute(
+                                    create_test_query,
+                                    {
+                                        "test_name": test_name,
+                                        "test_code": test_code
+                                    }
+                                ).fetchone()
+
+                            # Create new patient lab test entry
+                            create_patient_test_query = text("""
+                                INSERT INTO gnuhealth_patient_lab_test (
+                                    prescription,
+                                    name
+                                )
+                                VALUES (
+                                    :prescription_id,
+                                    :test_id
+                                )
+                            """)
+                            db.execute(
+                                create_patient_test_query,
+                                {
+                                    "prescription_id": result.id,
+                                    "test_id": test_type.id
+                                }
+                            )
+                            logger.debug(f"Added test: {test_name}")
+
+                # Handle medicines if provided
+                if update_data.medicine is not None:
+                    logger.debug("Processing medicine updates")
+                    
+                    # First, delete all existing prescription lines
+                    delete_all_lines_query = text("""
+                        DELETE FROM gnuhealth_prescription_line
+                        WHERE name = :prescription_order_id
                     """)
                     db.execute(
-                        create_patient_test_query,
-                        {
-                            "prescription_id": result.id,
-                            "test_id": test_type.id
-                        }
+                        delete_all_lines_query,
+                        {"prescription_order_id": result.id}
                     )
-
-            # Handle medicines if provided
-            if update_data.medicine:
-                # Create a set to track unique medicines
-                unique_medicines = set()
-                
-                for med_key, active_component in update_data.medicine.items():
-                    # Skip if we've already processed this medicine
-                    if active_component in unique_medicines:
-                        continue
+                    logger.debug("Deleted all existing prescription lines")
                     
-                    unique_medicines.add(active_component)
-                    
-                    # Check if medicine exists
-                    check_med_query = text("""
-                        SELECT id FROM gnuhealth_medicament 
-                        WHERE active_component = :active_component
-                    """)
-                    medicine = db.execute(check_med_query, {"active_component": active_component}).fetchone()
+                    if update_data.medicine:  # If new medicines are provided
+                        # Get unique medicine names to avoid duplicates
+                        unique_med_names = list(set(update_data.medicine.values()))
+                        logger.debug(f"Unique medicine names: {unique_med_names}")
+                        
+                        # Add new medicines
+                        for med_name in unique_med_names:
+                            # Check if medicine exists
+                            check_med_query = text("""
+                                SELECT id FROM gnuhealth_medicament 
+                                WHERE active_component = :med_name
+                            """)
+                            medicine = db.execute(check_med_query, {"med_name": med_name}).fetchone()
 
-                    if not medicine:
-                        # Create new medicine
-                        create_med_query = text("""
-                            INSERT INTO gnuhealth_medicament (
-                                active_component
-                            )
-                            VALUES (
-                                :active_component
-                            )
-                            RETURNING id
-                        """)
-                        medicine = db.execute(
-                            create_med_query,
-                            {"active_component": active_component}
-                        ).fetchone()
+                            if not medicine:
+                                # Create party entry for the medicine
+                                party_code = f"MED_{str(uuid.uuid4())[:8]}"
+                                logger.debug(f"Creating new medicine: {med_name} with code {party_code}")
+                                
+                                create_party_query = text("""
+                                    INSERT INTO party_party (name, code)
+                                    VALUES (:name, :code)
+                                    RETURNING id
+                                """)
+                                party_result = db.execute(
+                                    create_party_query,
+                                    {
+                                        "name": med_name,
+                                        "code": party_code
+                                    }
+                                ).fetchone()
 
-                    # Create new prescription line
-                    create_line_query = text("""
-                        INSERT INTO gnuhealth_prescription_line (
-                            name,
-                            medicament
-                        )
-                        VALUES (
-                            :prescription_order_id,
-                            :medicament_id
-                        )
-                    """)
-                    db.execute(
-                        create_line_query,
-                        {
-                            "prescription_order_id": result.id,
-                            "medicament_id": medicine.id
-                        }
-                    )
+                                # Create medicine entry
+                                create_med_query = text("""
+                                    INSERT INTO gnuhealth_medicament (name, active_component)
+                                    VALUES (:party_id, :active_component)
+                                    RETURNING id
+                                """)
+                                medicine = db.execute(
+                                    create_med_query,
+                                    {
+                                        "party_id": party_result.id,
+                                        "active_component": med_name
+                                    }
+                                ).fetchone()
+
+                            # Create new prescription line for each medicine
+                            create_line_query = text("""
+                                INSERT INTO gnuhealth_prescription_line (
+                                    name,
+                                    medicament
+                                )
+                                VALUES (
+                                    :prescription_order_id,
+                                    :medicament_id
+                                )
+                            """)
+                            db.execute(
+                                create_line_query,
+                                {
+                                    "prescription_order_id": result.id,
+                                    "medicament_id": medicine.id
+                                }
+                            )
+                            logger.debug(f"Added medicine: {med_name}")
+
+            except Exception as e:
+                logger.error(f"Error updating tests and medicines: {str(e)}")
+                db.rollback()
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Error updating tests and medicines: {str(e)}"
+                )
 
         # Update remarks if provided
         if update_data.remarks:
