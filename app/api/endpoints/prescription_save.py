@@ -22,20 +22,30 @@ class PrescriptionUpdate(BaseModel):
     medicine: Optional[Dict] = None
     remarks: Optional[Dict] = None
 
+# Add doctor authentication check
+async def verify_doctor(user: dict = Depends(get_current_user)):
+    if not user or user.get("role") != "doctor":
+        raise HTTPException(
+            status_code=403,
+            detail="Only doctors can access this endpoint"
+        )
+    return user
+
 @router.post("/prescription-save/{appointment_id}")
-def save_prescription(
+async def save_prescription(
     appointment_id: int,
     update_data: PrescriptionUpdate,
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(verify_doctor)
 ):
     try:
-        # First get the patient ID from the appointment
+        # First get the appointment details including status
         appointment_query = text("""
             SELECT 
                 ga.id,
                 ga.patient,
-                ga.healthprof
+                ga.healthprof,
+                ga.state
             FROM gnuhealth_appointment ga
             WHERE ga.id = :appointment_id
         """)
@@ -46,6 +56,47 @@ def save_prescription(
             return JSONResponse(
                 content={"message": "Appointment not found"},
                 status_code=404
+            )
+
+        # Add detailed logging for debugging
+        logger.debug(f"Logged in user ID: {user.get('id')}")
+        logger.debug(f"Appointment healthprof ID: {appointment.healthprof}")
+
+        # Get the internal_user ID for the healthprof
+        healthprof_query = text("""
+            SELECT pp.internal_user
+            FROM gnuhealth_healthprofessional ghp
+            JOIN party_party pp ON ghp.name = pp.id
+            WHERE ghp.id = :healthprof_id
+        """)
+        
+        healthprof_internal_user = db.execute(
+            healthprof_query, 
+            {"healthprof_id": appointment.healthprof}
+        ).fetchone()
+
+        if not healthprof_internal_user:
+            logger.error(f"Health professional details not found for ID: {appointment.healthprof}")
+            raise HTTPException(
+                status_code=404,
+                detail="Health professional details not found"
+            )
+
+        logger.debug(f"Health professional internal user ID: {healthprof_internal_user.internal_user}")
+
+        # Verify if the logged-in doctor is the one assigned to this appointment
+        if healthprof_internal_user.internal_user != user.get("id"):
+            logger.error(f"Authorization failed - Doctor ID mismatch. Expected internal_user: {healthprof_internal_user.internal_user}, Got: {user.get('id')}")
+            raise HTTPException(
+                status_code=403,
+                detail="You are not authorized to modify this appointment"
+            )
+
+        # Check if appointment is booked
+        if appointment.state != 'confirmed':
+            return JSONResponse(
+                content={"message": "Appointment has not been booked"},
+                status_code=400
             )
 
         # Generate prescription ID and appointment name
@@ -299,16 +350,20 @@ def save_prescription(
                 if update_data.medicine is not None:
                     logger.debug("Processing medicine updates")
                     
-                    # First, delete all existing prescription lines
+                    # First, delete all existing prescription lines except the default one
                     delete_all_lines_query = text("""
                         DELETE FROM gnuhealth_prescription_line
                         WHERE name = :prescription_order_id
+                        AND medicament != (
+                            SELECT id FROM gnuhealth_medicament 
+                            WHERE active_component = 'Default Medicine'
+                        )
                     """)
                     db.execute(
                         delete_all_lines_query,
                         {"prescription_order_id": result.id}
                     )
-                    logger.debug("Deleted all existing prescription lines")
+                    logger.debug("Deleted all existing prescription lines except default")
                     
                     if update_data.medicine:  # If new medicines are provided
                         # Get unique medicine names to avoid duplicates

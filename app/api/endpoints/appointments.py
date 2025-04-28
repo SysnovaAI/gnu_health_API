@@ -19,9 +19,10 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = payload.get("id")  # Ensure JWT payload contains 'id'
+        role = payload.get("role")  # Get the role from the token
         if not user_id:
             raise HTTPException(status_code=401, detail="User ID not found in token")
-        return {"id": user_id}  # Return as dictionary
+        return {"id": user_id, "role": role}  # Return both id and role
 
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token or expired session")

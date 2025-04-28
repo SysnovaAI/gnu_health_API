@@ -18,21 +18,80 @@ router = APIRouter()
 class AppointmentDetailsRequest(BaseModel):
     appointment_id: int
 
+# Add doctor authentication check
+async def verify_doctor(user: dict = Depends(get_current_user)):
+    if not user or user.get("role") != "doctor":
+        raise HTTPException(
+            status_code=403,
+            detail="Only doctors can access this endpoint"
+        )
+    return user
+
+async def cleanup_default_medicines(db: Session):
+    """Clean up default medicines and their associated party entries."""
+    try:
+        # First find all default medicines
+        find_default_meds_query = text("""
+            SELECT id, name 
+            FROM gnuhealth_medicament 
+            WHERE active_component = 'Default Medicine'
+        """)
+        default_meds = db.execute(find_default_meds_query).fetchall()
+        
+        if not default_meds:
+            logger.info("No default medicines found to clean up")
+            return
+        
+        logger.info(f"Found {len(default_meds)} default medicines to clean up")
+        
+        # Delete prescription lines referencing these medicines
+        delete_prescription_lines_query = text("""
+            DELETE FROM gnuhealth_prescription_line
+            WHERE medicament IN :med_ids
+        """)
+        db.execute(delete_prescription_lines_query, {"med_ids": tuple(med.id for med in default_meds)})
+        
+        # Delete the medicines
+        delete_medicines_query = text("""
+            DELETE FROM gnuhealth_medicament
+            WHERE id IN :med_ids
+        """)
+        db.execute(delete_medicines_query, {"med_ids": tuple(med.id for med in default_meds)})
+        
+        # Delete associated party entries
+        delete_party_query = text("""
+            DELETE FROM party_party
+            WHERE id IN :party_ids
+        """)
+        db.execute(delete_party_query, {"party_ids": tuple(med.name for med in default_meds)})
+        
+        db.commit()
+        logger.info("Successfully cleaned up default medicines")
+        
+    except Exception as e:
+        logger.error(f"Error cleaning up default medicines: {str(e)}")
+        db.rollback()
+        raise
+
 @router.post("/prescription-header")
-def get_appointment_details(
+async def get_appointment_details(
     request: AppointmentDetailsRequest,
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(verify_doctor)
 ):
     try:
+        # Clean up any existing default medicines
+        await cleanup_default_medicines(db)
+        
         logger.debug(f"Starting prescription-header for appointment_id: {request.appointment_id}")
         
-        # First get the patient ID from the appointment
+        # First get the appointment details including status
         appointment_query = text("""
             SELECT 
                 ga.id,
                 ga.patient,
-                ga.healthprof
+                ga.healthprof,
+                ga.state
             FROM gnuhealth_appointment ga
             WHERE ga.id = :appointment_id
         """)
@@ -44,6 +103,48 @@ def get_appointment_details(
             return JSONResponse(
                 content={"message": "Appointment not found"},
                 status_code=404
+            )
+
+        # Add detailed logging for debugging
+        logger.debug(f"Logged in user ID: {user.get('id')}")
+        logger.debug(f"Appointment healthprof ID: {appointment.healthprof}")
+
+        # Get the internal_user ID for the healthprof
+        healthprof_query = text("""
+            SELECT pp.internal_user
+            FROM gnuhealth_healthprofessional ghp
+            JOIN party_party pp ON ghp.name = pp.id
+            WHERE ghp.id = :healthprof_id
+        """)
+        
+        healthprof_internal_user = db.execute(
+            healthprof_query, 
+            {"healthprof_id": appointment.healthprof}
+        ).fetchone()
+
+        if not healthprof_internal_user:
+            logger.error(f"Health professional details not found for ID: {appointment.healthprof}")
+            raise HTTPException(
+                status_code=404,
+                detail="Health professional details not found"
+            )
+
+        logger.debug(f"Health professional internal user ID: {healthprof_internal_user.internal_user}")
+
+        # Verify if the logged-in doctor is the one assigned to this appointment
+        if healthprof_internal_user.internal_user != user.get("id"):
+            logger.error(f"Authorization failed - Doctor ID mismatch. Expected internal_user: {healthprof_internal_user.internal_user}, Got: {user.get('id')}")
+            raise HTTPException(
+                status_code=403,
+                detail="You are not authorized to access this appointment"
+            )
+
+        # Check if appointment is booked
+        if appointment.state != 'confirmed':
+            logger.error(f"Appointment is not in booked state. Current state: {appointment.state}")
+            return JSONResponse(
+                content={"message": "Appointment has not been booked"},
+                status_code=400
             )
 
         logger.debug(f"Found appointment: {appointment.id}")
@@ -125,11 +226,11 @@ def get_appointment_details(
                         :patient,
                         :healthprof,
                         now(),
-                        :healthprof,
+                        :internal_user,
                         now(),
-                        :healthprof,
+                        :internal_user,
                         now(),
-                        :healthprof
+                        :internal_user
                     )
                     RETURNING id
                 )
@@ -146,11 +247,11 @@ def get_appointment_details(
                 SELECT 
                     id,
                     now(),
-                    :healthprof,
+                    :internal_user,
                     now(),
                     now(),
                     now(),
-                    :healthprof,
+                    :internal_user,
                     :medicament_id
                 FROM new_order
                 RETURNING id
@@ -161,6 +262,7 @@ def get_appointment_details(
             logger.debug(f"prescription_id: {prescription_id}")
             logger.debug(f"patient: {appointment.patient}")
             logger.debug(f"healthprof: {appointment.healthprof}")
+            logger.debug(f"internal_user: {healthprof_internal_user.internal_user}")
             logger.debug(f"medicament_id: {medicine_result.id}")
             
             result = db.execute(
@@ -170,6 +272,7 @@ def get_appointment_details(
                     "prescription_id": prescription_id,
                     "patient": appointment.patient,
                     "healthprof": appointment.healthprof,
+                    "internal_user": healthprof_internal_user.internal_user,
                     "medicament_id": medicine_result.id
                 }
             ).fetchone()
@@ -473,17 +576,33 @@ def get_appointment_details(
         
         # Get all tests and medicines in a single query using joins
         prescription_query = text("""
-            SELECT DISTINCT
-                gpl.medicament,
-                gm.active_component,
-                gplt.id as test,
-                gltt.name AS test_name
-            FROM gnuhealth_prescription_order gpo
-            left join gnuhealth_patient_lab_test gplt on gpo.id = gplt.prescription
-            left JOIN gnuhealth_prescription_line gpl ON gpo.id = gpl.name
-            LEFT JOIN gnuhealth_medicament gm ON gm.id = gpl.medicament
-            LEFT JOIN gnuhealth_lab_test_type gltt ON gplt.name = gltt.id
-            WHERE gpo.appointment_id = :appointment_id
+            WITH tests AS (
+                SELECT DISTINCT
+                    gplt.id as test,
+                    gltt.name AS test_name
+                FROM gnuhealth_prescription_order gpo
+                LEFT JOIN gnuhealth_patient_lab_test gplt ON gpo.id = gplt.prescription
+                LEFT JOIN gnuhealth_lab_test_type gltt ON gplt.name = gltt.id
+                WHERE gpo.appointment_id = :appointment_id
+            ),
+            medicines AS (
+                SELECT DISTINCT
+                    gpl.medicament,
+                    gm.active_component
+                FROM gnuhealth_prescription_order gpo
+                LEFT JOIN gnuhealth_prescription_line gpl ON gpo.id = gpl.name
+                LEFT JOIN gnuhealth_medicament gm ON gm.id = gpl.medicament
+                WHERE gpo.appointment_id = :appointment_id
+                AND gm.active_component != 'Default Medicine'
+            )
+            SELECT 
+                t.test,
+                t.test_name,
+                m.medicament,
+                m.active_component
+            FROM tests t
+            FULL OUTER JOIN medicines m ON 1=1
+            WHERE t.test IS NOT NULL OR m.medicament IS NOT NULL
         """)
         
         prescriptions = db.execute(prescription_query, {"appointment_id": request.appointment_id}).fetchall()
@@ -496,8 +615,8 @@ def get_appointment_details(
         unique_medicines = set()
         
         for prescription in prescriptions:
-            # Add test if it exists
-            if prescription.test_name:
+            # Add test if it exists and not already added
+            if prescription.test_name and prescription.test_name not in med_tests.values():
                 test_key = f"test_name_{test_idx}"
                 med_tests[test_key] = prescription.test_name
                 test_idx += 1
@@ -547,5 +666,23 @@ def get_appointment_details(
     except Exception as e:
         return JSONResponse(
             content={"message": f"Error occurred: {str(e)}"},
+            status_code=500
+        )
+
+@router.post("/cleanup-default-medicines")
+async def cleanup_medicines(
+    db: Session = Depends(get_db),
+    user: dict = Depends(verify_doctor)
+):
+    """Endpoint to manually trigger cleanup of default medicines."""
+    try:
+        await cleanup_default_medicines(db)
+        return JSONResponse(
+            content={"message": "Default medicines cleaned up successfully"},
+            status_code=200
+        )
+    except Exception as e:
+        return JSONResponse(
+            content={"message": f"Error cleaning up default medicines: {str(e)}"},
             status_code=500
         ) 
