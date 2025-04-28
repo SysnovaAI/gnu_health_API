@@ -11,7 +11,7 @@ from app.api.endpoints import (
     booking_available_appointment_slots, all_specialty_show, doctor_checkavailable_slot_date, otp_verify,
     prescriptions, health, generate_slot,
     patient_search_doctor_list_by_department, patient_booked_slot_by_date,
-    prescription_save, medicine_list
+    prescription_save, medicine_list, prescription_test_catagory
 )
 
 # Configure logging
@@ -81,7 +81,7 @@ app.include_router(otp_verify.router, prefix="/api", tags=["users"])
 app.include_router(book_appointment_slot_confirmedOLD.router, prefix=settings.API_V1_STR, tags=["Appointment Booking"])
 app.include_router(health.router, prefix=settings.API_V1_STR, tags=["Health"])
 app.include_router(generate_slot.router, prefix=settings.API_V1_STR, tags=["Slot Generation"])
-app.include_router(prescription_test_catagoryOLD.public_router, prefix="/public", tags=["Test Categories"])
+app.include_router(prescription_test_catagory.public_router, prefix="/public", tags=["Test Categories"])
 app.include_router(medicine_list.public_router, prefix="/public", tags=["Medicines"])
 
 # Health check endpoint
