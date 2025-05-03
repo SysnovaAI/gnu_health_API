@@ -21,6 +21,7 @@ class PrescriptionUpdate(BaseModel):
     med_tests: Optional[Dict] = None
     medicine: Optional[Dict] = None
     remarks: Optional[Dict] = None
+    medical_history: Optional[Dict] = None
 
 # Add doctor authentication check
 async def verify_doctor(user: dict = Depends(get_current_user)):
@@ -255,6 +256,37 @@ async def save_prescription(
                     }
                 )
 
+        # Update medical history if provided
+        if update_data.medical_history:
+            # Get patient ID from appointment
+            patient_query = text("""
+                SELECT patient FROM gnuhealth_appointment
+                WHERE id = :appointment_id
+            """)
+            patient_result = db.execute(patient_query, {"appointment_id": appointment_id}).fetchone()
+            
+            if patient_result:
+                patient_id = patient_result.patient
+                
+                # Update medical history
+                medical_history_update_query = text("""
+                    UPDATE gnuhealth_patient
+                    SET 
+                        general_info = :general_info,
+                        write_date = CURRENT_TIMESTAMP,
+                        write_uid = :write_uid
+                    WHERE id = :patient_id
+                """)
+                
+                # Prepare the parameters
+                params = {
+                    "patient_id": patient_id,
+                    "write_uid": user.get('id'),
+                    "general_info": update_data.medical_history.get('general_info', '')
+                }
+                
+                db.execute(medical_history_update_query, params)
+
         # Update medical tests and medicines if provided
         if update_data.med_tests is not None or update_data.medicine is not None:
             try:
@@ -288,12 +320,10 @@ async def save_prescription(
                     logger.debug("Deleted all existing tests")
                     
                     if update_data.med_tests:  # If new tests are provided
-                        # Get unique test names to avoid duplicates
-                        unique_test_names = list(set(update_data.med_tests.values()))
-                        logger.debug(f"Unique test names: {unique_test_names}")
-                        
-                        # Add new tests
-                        for test_name in unique_test_names:
+                        # The new structure is a dict: {test_name_key: {"name": ..., "test_critearea": [...]}}
+                        for test_entry in update_data.med_tests.values():
+                            test_name = test_entry.get("name")
+                            test_criteareas = test_entry.get("test_critearea", [])
                             # Check if test type exists
                             check_test_query = text("""
                                 SELECT id FROM gnuhealth_lab_test_type 
@@ -326,6 +356,17 @@ async def save_prescription(
                                     }
                                 ).fetchone()
 
+                            # Find test_critearea_id(s) from names
+                            test_critearea_ids = []
+                            for crit_name in test_criteareas:
+                                crit_query = text("""
+                                    SELECT id FROM gnuhealth_lab_test_critearea WHERE name = :crit_name
+                                """)
+                                crit_result = db.execute(crit_query, {"crit_name": crit_name}).fetchone()
+                                if crit_result and crit_result.id:
+                                    test_critearea_ids.append(str(crit_result.id))
+                            test_critearea_id_str = ','.join(test_critearea_ids) if test_critearea_ids else None
+
                             # Create new patient lab test entry
                             create_patient_test_query = text("""
                                 INSERT INTO gnuhealth_patient_lab_test (
@@ -345,6 +386,10 @@ async def save_prescription(
                                 }
                             )
                             logger.debug(f"Added test: {test_name}")
+
+                            # Store criteria in a separate table or field if needed
+                            if test_critearea_id_str:
+                                logger.debug(f"Test criteria: {test_critearea_id_str}")
 
                 # Handle medicines if provided
                 if update_data.medicine is not None:

@@ -11,7 +11,8 @@ from app.api.endpoints import (
     booking_available_appointment_slots, all_specialty_show, doctor_checkavailable_slot_date, otp_verify,
     prescriptions, health, generate_slot,
     patient_search_doctor_list_by_department, patient_booked_slot_by_date,
-    prescription_save, medicine_list, prescription_test_catagory, patient_prescription
+    prescription_save, medicine_list, prescription_test_catagory, patient_prescription,
+    product, blog
 )
 
 # Configure logging
@@ -63,7 +64,8 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 # Include routers
-app.include_router(users.router, prefix=settings.API_V1_STR, tags=["Users"])
+app.include_router(product.router, prefix="/api", tags=["Products"])
+app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(appointments.router, prefix=settings.API_V1_STR, tags=["Appointments"])
 app.include_router(available_slots_telem_phy.router, prefix=settings.API_V1_STR, tags=["Appointment Slots"])
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -84,6 +86,7 @@ app.include_router(generate_slot.router, prefix=settings.API_V1_STR, tags=["Slot
 app.include_router(prescription_test_catagory.public_router, prefix="/public", tags=["Test Categories"])
 app.include_router(medicine_list.public_router, prefix="/public", tags=["Medicines"])
 app.include_router(patient_prescription.router, prefix="/api", tags=["Patient Prescriptions"])
+app.include_router(blog.router, prefix="/api", tags=["Blogs"])
 
 # Health check endpoint
 @app.get("/health")

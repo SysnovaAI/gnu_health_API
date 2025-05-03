@@ -293,17 +293,35 @@ async def get_patient_prescription(
         
         # Get all tests and medicines in a single query using joins
         prescription_query = text("""
-            SELECT DISTINCT
-                gpl.medicament,
-                gm.active_component,
-                gplt.id as test,
-                gltt.name AS test_name
-            FROM gnuhealth_prescription_order gpo
-            left join gnuhealth_patient_lab_test gplt on gpo.id = gplt.prescription
-            left JOIN gnuhealth_prescription_line gpl ON gpo.id = gpl.name
-            LEFT JOIN gnuhealth_medicament gm ON gm.id = gpl.medicament
-            LEFT JOIN gnuhealth_lab_test_type gltt ON gplt.name = gltt.id
-            WHERE gpo.appointment_id = :appointment_id
+            WITH tests AS (
+                SELECT DISTINCT
+                    gplt.id as test_id,
+                    gltt.name AS test_name,
+                    gplt.test_critearea_id as test_critearea_id
+                FROM gnuhealth_prescription_order gpo
+                LEFT JOIN gnuhealth_patient_lab_test gplt ON gpo.id = gplt.prescription
+                LEFT JOIN gnuhealth_lab_test_type gltt ON gplt.name = gltt.id
+                WHERE gpo.appointment_id = :appointment_id
+            ),
+            medicines AS (
+                SELECT DISTINCT
+                    gpl.medicament,
+                    gm.active_component
+                FROM gnuhealth_prescription_order gpo
+                LEFT JOIN gnuhealth_prescription_line gpl ON gpo.id = gpl.name
+                LEFT JOIN gnuhealth_medicament gm ON gm.id = gpl.medicament
+                WHERE gpo.appointment_id = :appointment_id
+                AND gm.active_component != 'Default Medicine'
+            )
+            SELECT 
+                t.test_id,
+                t.test_name,
+                t.test_critearea_id,
+                m.medicament,
+                m.active_component
+            FROM tests t
+            FULL OUTER JOIN medicines m ON 1=1
+            WHERE t.test_id IS NOT NULL OR m.medicament IS NOT NULL
         """)
         
         prescriptions = db.execute(prescription_query, {"appointment_id": request.appointment_id}).fetchall()
@@ -316,10 +334,27 @@ async def get_patient_prescription(
         unique_medicines = set()
         
         for prescription in prescriptions:
-            # Add test if it exists
-            if prescription.test_name:
+            # Add test if it exists and not already added
+            if prescription.test_name and not any(isinstance(v, dict) and v.get('name') == prescription.test_name for v in med_tests.values()):
                 test_key = f"test_name_{test_idx}"
-                med_tests[test_key] = prescription.test_name
+                # Fetch test criteria name(s) if test_critearea_id is present
+                test_criteria = []
+                if hasattr(prescription, 'test_critearea_id') and prescription.test_critearea_id:
+                    # test_critearea_id could be a single id or a comma-separated list
+                    criteria_ids = str(prescription.test_critearea_id).split(',')
+                    for crit_id in criteria_ids:
+                        crit_id = crit_id.strip()
+                        if crit_id:
+                            crit_query = text("""
+                                SELECT name FROM gnuhealth_lab_test_critearea WHERE id = :crit_id
+                            """)
+                            crit_result = db.execute(crit_query, {"crit_id": crit_id}).fetchone()
+                            if crit_result and crit_result.name:
+                                test_criteria.append(crit_result.name)
+                med_tests[test_key] = {
+                    "name": prescription.test_name,
+                    "test_critearea": test_criteria if test_criteria else None
+                }
                 test_idx += 1
                 
             # Add medicine if it exists and not already added
