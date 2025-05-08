@@ -8,6 +8,7 @@ class ProductBase(BaseModel):
     quantity: float
     rate: float
     product_supplier: int
+    image_name: Optional[str] = None
 
 class ProductCreate(ProductBase):
     pass
@@ -18,11 +19,13 @@ class ProductUpdate(BaseModel):
     quantity: Optional[float] = None
     rate: Optional[float] = None
     product_supplier: Optional[int] = None
+    image_name: Optional[str] = None
 
 class Product(ProductBase):
     id: int
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    image_path: Optional[str] = None
 
     class Config:
         from_attributes = True 

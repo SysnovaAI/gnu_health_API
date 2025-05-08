@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import text
 from fastapi.security import OAuth2PasswordBearer
@@ -24,49 +24,68 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
-        print("🔍 Debug: Starting token validation")
-        if not token:
-            print("❌ Debug: No token provided")
-            raise HTTPException(status_code=401, detail="No token provided")
-
-        print(f"🔍 Debug: Token received: {token[:10]}...")  # Only print first 10 chars for security
-
-        try:
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        except JWTError as e:
-            print(f"❌ Debug: JWT Decode Error: {str(e)}")
-            raise HTTPException(status_code=401, detail="Invalid token format or expired")
-
-        print(f"🔍 Debug: Token decoded successfully: {payload}")
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         
         user_id = payload.get("id")
         user_name = payload.get("name")
         login = payload.get("login")
         role = payload.get("role")
 
-        print(f"🔍 Debug: Extracted user data - ID: {user_id}, Name: {user_name}, Role: {role}")
+        if not user_id or not role:
+            raise HTTPException(status_code=401, detail="Missing user info in token")
 
-        if not user_id:
-            print("❌ Debug: Missing user ID in token")
-            raise HTTPException(status_code=401, detail="Invalid token: missing user ID")
+        # Debug log (remove or log securely in production)
+        print(f"✅ Decoded Token: ID={user_id}, Name={user_name}, Role={role}")
 
-        user_data = {
+        return {
             "id": user_id,
             "name": user_name,
             "login": login,
             "role": role
         }
-        print(f"🔍 Debug: Returning user data: {user_data}")
-        return user_data
 
-    except HTTPException as he:
-        raise he
+    except JWTError as e:
+        print("JWT Decode Error:", str(e))
+        raise HTTPException(status_code=401, detail="Invalid token or expired session")
+
+# Fetch all blog posts (public, no auth required)
+@router.post("/all_blogs")
+def fetch_all_blogs(db: Session = Depends(get_db)):
+    try:
+        query = text("""
+            SELECT b.*, 
+                   u.name as author_name, 
+                   CASE 
+                       WHEN b.image_name IS NOT NULL THEN b.image_name
+                       ELSE NULL 
+                   END as image_name_only
+            FROM blog_post b
+            LEFT JOIN res_user u ON b.author_id = u.id
+            ORDER BY b.created_at DESC
+        """)
+        blogs = db.execute(query).fetchall()
+        blogs_out = []
+        for blog in blogs:
+            blog_dict = dict(blog._mapping)
+            blog_dict["image_path"] = get_full_image_url(blog_dict.get("image_name_only"))
+            # Fetch approved comments for this blog
+            comments_query = text("""
+                SELECT 
+                    c.*, u.name as commenter_name, b.id as blog_id, b.title as blog_title
+                FROM blog_comment c
+                LEFT JOIN res_user u ON c.commenter_id = u.id
+                LEFT JOIN blog_post b ON c.blog_id = b.id
+                WHERE c.blog_id = :blog_id 
+                AND c.status = 'approved'
+                ORDER BY c.created_at ASC
+            """)
+            comments = db.execute(comments_query, {"blog_id": blog_dict["id"]}).fetchall()
+            blog_dict["comments"] = [dict(comment._mapping) for comment in comments]
+            blogs_out.append(blog_dict)
+        return {"blogs": blogs_out}
     except Exception as e:
-        print(f"❌ Debug: Token Validation Error: {str(e)}")
-        print(f"❌ Debug: Error type: {type(e)}")
-        import traceback
-        print(f"❌ Debug: Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
+        print(f"Error fetching blogs: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch blogs")
 
 
 # Create a new blog post
@@ -88,22 +107,24 @@ def create_blog(
         upload_dir = "blog_image"
         os.makedirs(upload_dir, exist_ok=True)
 
-        # Generate a unique filename
-        file_extension = os.path.splitext(image.filename)[1]
-        filename = f"{uuid4().hex}{file_extension}"
+        filename = image.filename
         file_path = os.path.join(upload_dir, filename)
+
+        if os.path.exists(file_path):
+            filename = f"{uuid4().hex}_{filename}"
+            file_path = os.path.join(upload_dir, filename)
 
         with open(file_path, "wb") as f:
             f.write(image.file.read())
 
         image_name = filename
-        image_path = get_full_image_url(filename)
+        image_path = f"/blog_image/{filename}"
 
     # Insert blog post with default status = "pending"
     query = text("""
         INSERT INTO blog_post 
-        (title, content, image_name, meta_title, meta_description, meta_keywords, author_id, status, created_at)
-        VALUES (:title, :content, :image_name, :meta_title, :meta_description, :meta_keywords, :author_id, :status, NOW())
+        (title, content, image_name, meta_title, meta_description, meta_keywords, author_id, status)
+        VALUES (:title, :content, :image_name, :meta_title, :meta_description, :meta_keywords, :author_id, :status)
         RETURNING id
     """)
     result = db.execute(query, {
@@ -134,102 +155,13 @@ def create_blog(
 # Helper to get full image URL
 def get_full_image_url(image_name: Optional[str]) -> Optional[str]:
     if image_name:
-        return f"{BASE_URL_blog}/blog_image/{image_name}"  # Using BASE_URL_blog for complete URL
+        return f"{BASE_URL_blog}/blog_image/{image_name}"
     return None
-
-# Fetch all blog posts (with authentication)
-@router.get("/blogs/all-blogs/all")
-async def fetch_all_blogs(
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    try:
-        print("🔍 Debug: Starting fetch_all_blogs")
-        print(f"🔍 Debug: Headers: {request.headers}")
-        print(f"🔍 Debug: Current user data: {current_user}")
-
-        if not current_user:
-            print("❌ Debug: No current user found")
-            raise HTTPException(status_code=401, detail="Authentication required")
-
-        # Base query for blog details
-        base_query = """
-            SELECT b.*, 
-                   u.name as author_name, 
-                   CASE 
-                       WHEN b.image_name IS NOT NULL THEN b.image_name
-                       ELSE NULL 
-                   END as image_name_only
-            FROM blog_post b
-            LEFT JOIN res_user u ON b.author_id = u.id
-        """
-
-        # Add status filter for non-admin users
-        user_role = current_user.get("role", "").lower()
-        user_id = current_user.get("id")
-        print(f"🔍 Debug: User role: {user_role}, User ID: {user_id}")
-        
-        if user_role != "administration":
-            print("🔍 Debug: Adding filters for non-admin user")
-            # Show approved blogs OR user's own blogs (regardless of status)
-            base_query += f""" WHERE (b.status = 'approved' OR b.author_id = {user_id})"""
-
-        # Add ordering
-        base_query += " ORDER BY b.created_at DESC"
-        print(f"🔍 Debug: Final query: {base_query}")
-
-        query = text(base_query)
-        blogs = db.execute(query).fetchall()
-        print(f"🔍 Debug: Found {len(blogs)} blogs")
-        
-        blogs_out = []
-        for blog in blogs:
-            blog_dict = dict(blog._mapping)
-            blog_dict["image_path"] = get_full_image_url(blog_dict.get("image_name_only"))
-            
-            # Fetch approved comments for this blog
-            comments_query = text("""
-                SELECT 
-                    c.*, u.name as commenter_name, b.id as blog_id, b.title as blog_title
-                FROM blog_comment c
-                LEFT JOIN res_user u ON c.commenter_id = u.id
-                LEFT JOIN blog_post b ON c.blog_id = b.id
-                WHERE c.blog_id = :blog_id 
-                AND c.status = 'approved'
-                ORDER BY c.created_at ASC
-            """)
-            comments = db.execute(comments_query, {"blog_id": blog_dict["id"]}).fetchall()
-            blog_dict["comments"] = [dict(comment._mapping) for comment in comments]
-            blogs_out.append(blog_dict)
-
-        response = {
-            "success": True,
-            "blogs": blogs_out,
-            "user_role": user_role
-        }
-        print(f"🔍 Debug: Returning response with {len(blogs_out)} blogs")
-        return response
-
-    except HTTPException as he:
-        print(f"❌ Debug: HTTP Exception: {str(he)}")
-        raise he
-    except Exception as e:
-        print(f"❌ Debug: Unexpected error: {str(e)}")
-        print(f"❌ Debug: Error type: {type(e)}")
-        import traceback
-        print(f"❌ Debug: Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch blogs: {str(e)}")
 
 
 # Fetch single blog post by ID (public, no auth required)
-@router.get("/blogs/content/{id}")
-def fetch_blog(
-    id: int,
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    # Fetch the blog
+@router.post("/blogs/{id}")
+def fetch_blog(id: int, db: Session = Depends(get_db)):
     blog_query = text("""
         SELECT 
             b.*, u.name as author_name,
@@ -242,18 +174,6 @@ def fetch_blog(
     if not blog:
         raise HTTPException(status_code=404, detail="Blog not found")
     blog_dict = dict(blog._mapping)
-
-    user_role = current_user.get("role", "").lower()
-    user_id = current_user.get("id")
-    is_admin = user_role == "administration"
-    is_owner = blog_dict.get("author_id") == user_id
-    is_approved = blog_dict.get("status") == "approved"
-
-    # Access control logic
-    if not is_admin:
-        if not (is_approved or is_owner):
-            raise HTTPException(status_code=403, detail="Not authorized to view this blog")
-
     blog_dict["image_path"] = get_full_image_url(blog_dict.get("image_name_only"))
 
     # Fetch approved comments with commenter details and blog info
@@ -276,36 +196,25 @@ def fetch_blog(
     }
 
 # Update a blog post
-@router.put("/blogs/update/{id}")
+@router.put("/api/blogs/{id}")
 def update_blog(
     id: int,
-    title: str = Form(None),
-    content: str = Form(None),
-    meta_title: str = Form(None),
-    meta_description: str = Form(None),
-    meta_keywords: str = Form(None),
-    image: UploadFile = File(None),
+    title: str = None,
+    content: str = None,
+    meta_title: str = None,
+    meta_description: str = None,
+    meta_keywords: str = None,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    blog_query = text("SELECT author_id, image_name FROM blog_post WHERE id = :id")
+    blog_query = text("SELECT author_id FROM blog_post WHERE id = :id")
     blog = db.execute(blog_query, {"id": id}).first()
 
     if not blog:
         raise HTTPException(status_code=404, detail="Blog not found")
     if blog.author_id != current_user["id"]:
+        print(blog.author_id,current_user["id"])
         raise HTTPException(status_code=403, detail="Not authorized to update this blog")
-
-    image_name = blog.image_name
-    if image and image.filename:
-        upload_dir = "blog_image"
-        os.makedirs(upload_dir, exist_ok=True)
-        file_extension = os.path.splitext(image.filename)[1]
-        filename = f"{uuid4().hex}{file_extension}"
-        file_path = os.path.join(upload_dir, filename)
-        with open(file_path, "wb") as f:
-            f.write(image.file.read())
-        image_name = filename
 
     update_query = text("""
         UPDATE blog_post SET
@@ -314,7 +223,6 @@ def update_blog(
             meta_title = COALESCE(:meta_title, meta_title),
             meta_description = COALESCE(:meta_description, meta_description),
             meta_keywords = COALESCE(:meta_keywords, meta_keywords),
-            image_name = :image_name,
             updated_at = NOW()
         WHERE id = :id
     """)
@@ -324,14 +232,13 @@ def update_blog(
         "content": content,
         "meta_title": meta_title,
         "meta_description": meta_description,
-        "meta_keywords": meta_keywords,
-        "image_name": image_name
+        "meta_keywords": meta_keywords
     })
     db.commit()
     return {"success": True, "message": "Blog updated successfully"}
 
 # Delete a blog post
-@router.delete("/blogs/{id}")
+@router.delete("/api/blogs/{id}")
 def delete_blog(id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     blog_query = text("SELECT author_id FROM blog_post WHERE id = :id")
     blog = db.execute(blog_query, {"id": id}).first()
@@ -351,7 +258,7 @@ def delete_blog(id: int, db: Session = Depends(get_db), current_user: dict = Dep
 
 
 # Add comment to a blog - Anyone can comment
-@router.post("/blogs/comments/add/{blog_id}")
+@router.post("/api/blogs/{blog_id}/comments/")
 def add_comment(
     blog_id: int, 
     comment: str = Form(...),
@@ -377,8 +284,8 @@ def add_comment(
     db.commit()
     return {"success": True, "message": "Comment added, awaiting approval"}
 
-# Approve a comment - Only administrators can approve
-@router.put("/comments/{comment_id}/approve")
+# Approve a comment - Only blog author can approve
+@router.put("/api/comments/{comment_id}/approve")
 def approve_comment(
     comment_id: int, 
     db: Session = Depends(get_db),
@@ -386,7 +293,7 @@ def approve_comment(
 ):
     # Get the comment and its associated blog
     comment_query = text("""
-        SELECT c.id, c.blog_id, c.status, b.author_id 
+        SELECT c.id, c.blog_id, b.author_id 
         FROM blog_comment c
         JOIN blog_post b ON c.blog_id = b.id
         WHERE c.id = :comment_id
@@ -396,32 +303,25 @@ def approve_comment(
     if not result:
         raise HTTPException(status_code=404, detail="Comment not found")
     
-    user_role = current_user.get("role", "").lower()
-    user_id = current_user.get("id")
-    is_admin = user_role == "administration"
-    is_author = result.author_id == user_id
-
-    if not (is_admin or is_author):
-        raise HTTPException(status_code=403, detail="Only administrators or the blog author can approve comments")
-    
-    if result.status == "approved":
-        raise HTTPException(status_code=400, detail="Comment is already approved")
+    # Check if current user is the blog author
+    if result.author_id != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Only the blog author can approve comments")
 
     update_query = text("""
         UPDATE blog_comment 
         SET status = 'approved', 
-            approved_by = :approver_id
+            approved_by = :author_id 
         WHERE id = :comment_id
     """)
     db.execute(update_query, {
         "comment_id": comment_id,
-        "approver_id": user_id
+        "author_id": current_user["id"]
     })
     db.commit()
     return {"success": True, "message": "Comment approved"}
 
-# Reject a comment - Only administrators can reject
-@router.put("/comments/{comment_id}/reject")
+# Reject a comment - Only blog author can reject
+@router.put("/api/comments/{comment_id}/reject")
 def reject_comment(
     comment_id: int, 
     db: Session = Depends(get_db),
@@ -429,7 +329,7 @@ def reject_comment(
 ):
     # Get the comment and its associated blog
     comment_query = text("""
-        SELECT c.id, c.blog_id, c.status, b.author_id 
+        SELECT c.id, c.blog_id, b.author_id 
         FROM blog_comment c
         JOIN blog_post b ON c.blog_id = b.id
         WHERE c.id = :comment_id
@@ -439,32 +339,25 @@ def reject_comment(
     if not result:
         raise HTTPException(status_code=404, detail="Comment not found")
     
-    user_role = current_user.get("role", "").lower()
-    user_id = current_user.get("id")
-    is_admin = user_role == "administration"
-    is_author = result.author_id == user_id
-
-    if not (is_admin or is_author):
-        raise HTTPException(status_code=403, detail="Only administrators or the blog author can reject comments")
-    
-    if result.status == "rejected":
-        raise HTTPException(status_code=400, detail="Comment is already rejected")
+    # Check if current user is the blog author
+    if result.author_id != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Only the blog author can reject comments")
 
     update_query = text("""
         UPDATE blog_comment 
         SET status = 'rejected', 
-            approved_by = :approver_id
+            approved_by = :author_id 
         WHERE id = :comment_id
     """)
     db.execute(update_query, {
         "comment_id": comment_id,
-        "approver_id": user_id
+        "author_id": current_user["id"]
     })
     db.commit()
     return {"success": True, "message": "Comment rejected"}
 
 # Fetch all approved comments for a blog - Anyone can view
-@router.get("/blogs/{blog_id}/comments/")
+@router.get("/api/blogs/{blog_id}/comments/")
 def fetch_approved_comments(blog_id: int, db: Session = Depends(get_db)):
     # Check if blog exists
     blog_query = text("SELECT id FROM blog_post WHERE id = :blog_id")
@@ -482,7 +375,7 @@ def fetch_approved_comments(blog_id: int, db: Session = Depends(get_db)):
     return {"comments": [dict(comment._mapping) for comment in comments]}
 
 # Approve a blog post - Only administrators can approve
-@router.put("/admininistration/blogs/approve/{blog_id}")
+@router.put("/api/{blog_id}/approve")
 def approve_blog(
     blog_id: int, 
     db: Session = Depends(get_db),
@@ -508,7 +401,7 @@ def approve_blog(
     return {"success": True, "message": "Blog approved successfully"}
 
 # Reject a blog post - Only administrators can reject
-@router.put("/admininistration/blogs/reject/{blog_id}")
+@router.put("/api/{blog_id}/reject")
 def reject_blog(
     blog_id: int, 
     db: Session = Depends(get_db),
@@ -534,7 +427,7 @@ def reject_blog(
     return {"success": True, "message": "Blog rejected successfully"}
 
 # Author-only: fetch all comments for a blog (any status)
-@router.get("/blogs/comments/all/{blog_id}")
+@router.get("/api/blogs/{blog_id}/all_comments")
 def fetch_all_comments_for_blog(blog_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     # Check if current user is the author
     blog_query = text("SELECT author_id FROM blog_post WHERE id = :blog_id")
@@ -556,64 +449,3 @@ def fetch_all_comments_for_blog(blog_id: int, db: Session = Depends(get_db), cur
     comments = db.execute(comments_query, {"blog_id": blog_id}).fetchall()
     comments_list = [dict(comment._mapping) for comment in comments]
     return {"comments": comments_list}
-
-# Public endpoint to fetch all approved blogs (no authentication required)
-@router.get("/all-blogs/public/for-all")
-async def fetch_public_blogs(
-    request: Request,
-    db: Session = Depends(get_db)
-):
-    try:
-        print("🔍 Debug: Starting fetch_public_blogs")
-        
-        # Base query for blog details - only approved blogs
-        base_query = """
-            SELECT b.*, 
-                   u.name as author_name, 
-                   CASE 
-                       WHEN b.image_name IS NOT NULL THEN b.image_name
-                       ELSE NULL 
-                   END as image_name_only
-            FROM blog_post b
-            LEFT JOIN res_user u ON b.author_id = u.id
-            WHERE b.status = 'approved'
-            ORDER BY b.created_at DESC
-        """
-
-        query = text(base_query)
-        blogs = db.execute(query).fetchall()
-        print(f"🔍 Debug: Found {len(blogs)} approved blogs")
-        
-        blogs_out = []
-        for blog in blogs:
-            blog_dict = dict(blog._mapping)
-            blog_dict["image_path"] = get_full_image_url(blog_dict.get("image_name_only"))
-            
-            # Fetch approved comments for this blog
-            comments_query = text("""
-                SELECT 
-                    c.*, u.name as commenter_name, b.id as blog_id, b.title as blog_title
-                FROM blog_comment c
-                LEFT JOIN res_user u ON c.commenter_id = u.id
-                LEFT JOIN blog_post b ON c.blog_id = b.id
-                WHERE c.blog_id = :blog_id 
-                AND c.status = 'approved'
-                ORDER BY c.created_at ASC
-            """)
-            comments = db.execute(comments_query, {"blog_id": blog_dict["id"]}).fetchall()
-            blog_dict["comments"] = [dict(comment._mapping) for comment in comments]
-            blogs_out.append(blog_dict)
-
-        response = {
-            "success": True,
-            "blogs": blogs_out
-        }
-        print(f"🔍 Debug: Returning response with {len(blogs_out)} blogs")
-        return response
-
-    except Exception as e:
-        print(f"❌ Debug: Unexpected error: {str(e)}")
-        print(f"❌ Debug: Error type: {type(e)}")
-        import traceback
-        print(f"❌ Debug: Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch blogs: {str(e)}")

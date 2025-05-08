@@ -734,3 +734,173 @@ async def fetch_stock_history(product_id: int, db: Session = Depends(get_db)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail="Error: " + str(e))
+
+@router.get("/companies/", summary="Get All Companies")
+async def get_all_companies(db: Session = Depends(get_db)):
+    try:
+        companies = db.execute(text("""
+            SELECT 
+                cc.id,
+                cc.currency,
+                cc.party,
+                cc.timezone,
+                cc.create_date,
+                cc.write_date,
+                cc.cancel_invoice_out,
+                cc.purchase_taxes_expense,
+                pp.name as party_name,
+                pp.code as party_code,
+                pp.active as party_active
+            FROM public.company_company cc
+            LEFT JOIN public.party_party pp ON pp.id = cc.party
+            ORDER BY cc.id
+        """)).fetchall()
+        
+        return [dict(row._mapping) for row in companies]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Error: " + str(e))
+
+@router.get("/categories/", summary="Get All Categories")
+async def get_all_categories(db: Session = Depends(get_db)):
+    try:
+        categories = db.execute(text("""
+            SELECT 
+                pc.id,
+                pc.name,
+                pc.parent,
+                pc.create_date,
+                pc.write_date,
+                pc.account_parent,
+                pc.accounting,
+                pc.supplier_taxes_deductible_rate,
+                pc.taxes_parent
+            FROM public.product_category pc
+            LEFT JOIN public.product_category pc2 ON pc2.id = pc.parent
+            ORDER BY pc.id
+        """)).fetchall()
+        
+        return [dict(row._mapping) for row in categories]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Error: " + str(e))
+
+@router.post("/suppliers/", summary="Add New Supplier")
+async def add_supplier(
+    name: str,
+    currency: int = 1,  # Default currency ID
+    timezone: str = "Asia/Dhaka",  # Default timezone
+    db: Session = Depends(get_db)
+):
+    try:
+        # Generate a unique code for the party
+        party_code = f"{uuid.uuid4()}-{name}"
+        
+        # Insert into party_party first
+        party_result = db.execute(
+            text("""
+                INSERT INTO public.party_party (
+                    name, code, active, create_date, is_institution, is_insurance_company
+                ) VALUES (
+                    :name, :code, true, NOW(), true, false
+                ) RETURNING id
+            """),
+            {
+                "name": name,
+                "code": party_code
+            }
+        )
+        party_id = party_result.scalar()
+        
+        # Insert into company_company
+        company_result = db.execute(
+            text("""
+                INSERT INTO public.company_company (
+                    party, currency, timezone, create_date, cancel_invoice_out, purchase_taxes_expense
+                ) VALUES (
+                    :party, :currency, :timezone, NOW(), false, false
+                ) RETURNING id
+            """),
+            {
+                "party": party_id,
+                "currency": currency,
+                "timezone": timezone
+            }
+        )
+        company_id = company_result.scalar()
+        
+        db.commit()
+        
+        return {
+            "message": "Supplier added successfully",
+            "company_id": company_id,
+            "party_id": party_id,
+            "name": name,
+            "code": party_code
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Error: " + str(e))
+
+@router.get("/by_company/", summary="Search Products by Company")
+async def search_products_by_company(
+    company_id: Optional[int] = None,
+    company_name: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    try:
+        if not company_id and not company_name:
+            raise HTTPException(
+                status_code=400,
+                detail="Either company_id or company_name must be provided"
+            )
+
+        # Build the base query
+        query = """
+            SELECT DISTINCT
+                pp.id as product_id,
+                pt.name as product_name,
+                pt.code as product_code,
+                pt.type as product_type,
+                pp.description,
+                plp.list_price as selling_price,
+                pcp.cost_price as buying_price,
+                cc.id as company_id,
+                pp2.name as company_name,
+                pc.name as category_name
+            FROM public.product_template pt
+            JOIN public.product_product pp ON pp.template = pt.id
+            LEFT JOIN public.product_list_price plp ON plp.template = pt.id
+            LEFT JOIN public.product_cost_price pcp ON pcp.product = pp.id
+            LEFT JOIN public.purchase_product_supplier pps ON pps.product = pp.id
+            LEFT JOIN public.company_company cc ON cc.id = pps.company
+            LEFT JOIN public.party_party pp2 ON pp2.id = cc.party
+            LEFT JOIN public.\"product_template-product_category\" ptc ON ptc.template = pt.id
+            LEFT JOIN public.product_category pc ON pc.id = ptc.category
+            WHERE 1=1
+        """
+
+        params = {}
+        
+        # Add company_id filter if provided
+        if company_id:
+            query += " AND cc.id = :company_id"
+            params["company_id"] = company_id
+        
+        # Add company_name filter if provided
+        if company_name:
+            query += " AND LOWER(pp2.name) LIKE LOWER(:company_name)"
+            params["company_name"] = f"%{company_name}%"
+
+        # Execute the query
+        rows = db.execute(text(query), params).fetchall()
+        
+        if not rows:
+            raise HTTPException(
+                status_code=404,
+                detail="No products found for the given company"
+            )
+
+        return [dict(row._mapping) for row in rows]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Error: " + str(e))

@@ -302,7 +302,6 @@ async def get_appointment_details(
                 id,
                 chief_complaint,
                 systolic,
-                diastolic,
                 glycemia,
                 weight,
                 height
@@ -450,7 +449,7 @@ async def get_appointment_details(
             if hasattr(diagnosis, 'chief_complaint') and diagnosis.chief_complaint:
                 diagnosis_details["complain"] = diagnosis.chief_complaint
             if hasattr(diagnosis, 'systolic') and diagnosis.systolic:
-                diagnosis_details["blood_pressure"] = str (diagnosis.systolic) + "/"+ str(diagnosis.diastolic)
+                diagnosis_details["blood_pressure"] = diagnosis.systolic
             if hasattr(diagnosis, 'glycemia') and diagnosis.glycemia:
                 diagnosis_details["sugar_level"] = diagnosis.glycemia
             if hasattr(diagnosis, 'weight') and diagnosis.weight:

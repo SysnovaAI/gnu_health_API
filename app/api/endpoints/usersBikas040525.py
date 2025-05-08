@@ -33,27 +33,6 @@ allowed_types = {
     "insurance_companies": "is_insurance_company"
 }
 
-
-def insert_res_user_res_group(user_id, group_info, db: Session):
-    # Fetch group ID for 'Health Doctor'
-    query = text("SELECT id FROM res_group WHERE name = :group_info")
-    res_group_id = db.execute(query, {"group_info": group_info}).fetchone()
-
-    if not res_group_id:
-        raise HTTPException(status_code=500, detail="Health Doctor group not found")
-
-    # Insert into res_user-res_group (quote reserved words)
-    res_user_res_group = text("""
-        INSERT INTO "res_user-res_group" ("user", create_date, "group") 
-        VALUES (:user, :create_date, :group) RETURNING id;
-    """)
-    res_user_res_group_execute = db.execute(res_user_res_group, {
-        "user": user_id,
-        "create_date": datetime.now(),
-        "group": res_group_id[0]
-    }).fetchone()
-    print(res_user_res_group_execute)
-
 @router.get("/available-slots/{doc_id}")
 def get_all_available_slots(doc_id: int, db: Session = Depends(get_db)):
     """
@@ -232,51 +211,11 @@ def get_single_user(user_type: str, id: int, db: Session = Depends(get_db)):
 
 
 
-# # User types and their respective flags
-# USER_TYPES = {
-#     "doctor": {"is_healthprof": True, "is_patient": False},
-#     "patient": {"is_healthprof": False, "is_patient": True}
-# }
-
 # User types and their respective flags
 USER_TYPES = {
-    "doctor": {
-        "is_healthprof": True,
-        "is_patient": False,
-        "is_user": False,
-        "is_assistant": False,
-        "is_nurse": False
-    },
-    "patient": {
-        "is_healthprof": False,
-        "is_patient": True,
-        "is_user": False,
-        "is_assistant": False,
-        "is_nurse": False
-    },
-    "dr-assistant": {
-        "is_healthprof": False,
-        "is_patient": False,
-        "is_user": False,
-        "is_assistant": True,
-        "is_nurse": False
-    },
-    "user": {
-        "is_healthprof": False,
-        "is_patient": False,
-        "is_user": True,
-        "is_assistant": False,
-        "is_nurse": False
-    },
-    "nurse": {
-        "is_healthprof": False,
-        "is_patient": False,
-        "is_user": False,
-        "is_assistant": False,
-        "is_nurse": True
-    }
+    "doctor": {"is_healthprof": True, "is_patient": False},
+    "patient": {"is_healthprof": False, "is_patient": True}
 }
-
 
 def generate_code(name):
     """Generate a unique code using UUID prefix + name"""
@@ -307,9 +246,7 @@ def register_user(user_type: str, data: dict, db: Session = Depends(get_db)):
     email = data.get("email")
     password_hash = data.get("password_hash")
     gender = data.get("gender", "").lower()  # Ensure lowercase
-    # year_of_experience = data.get("year_of_experience") if user_type == "doctor" else None
-    year_of_experience = data.get("year_of_experience") if user_type in ["doctor", "nurse", "dr-assistant"] else None
-
+    year_of_experience = data.get("year_of_experience") if user_type == "doctor" else None
 
     if not all([name, mobile_number, email, password_hash]):
         raise HTTPException(status_code=400, detail="Missing required fields")
@@ -343,8 +280,8 @@ def register_user(user_type: str, data: dict, db: Session = Depends(get_db)):
 
         # Step 2: Insert into `party_party` table
         party_query = text("""
-            INSERT INTO party_party (name, mobile_number, internal_user, is_healthprof, is_patient, is_assistant, is_person, code, active, create_date, create_uid, write_date, write_uid, activation_date, gender, ref) 
-            VALUES (:name, :mobile_number, :user_id, :is_healthprof, :is_patient, :is_assistant, :is_person, :code, :active, :create_date, :create_uid, :write_date, :write_uid, :activation_date, :gender, :ref) RETURNING id;
+            INSERT INTO party_party (name, mobile_number, internal_user, is_healthprof, is_patient, is_person, code, active, create_date, create_uid, write_date, write_uid, activation_date, gender, ref) 
+            VALUES (:name, :mobile_number, :user_id, :is_healthprof, :is_patient, :is_person, :code, :active, :create_date, :create_uid, :write_date, :write_uid, :activation_date, :gender, :ref) RETURNING id;
         """)
         party_result = db.execute(party_query, {
             "name": name,
@@ -352,7 +289,6 @@ def register_user(user_type: str, data: dict, db: Session = Depends(get_db)):
             "user_id": user_id,
             "is_healthprof": USER_TYPES[user_type]["is_healthprof"],
             "is_patient": USER_TYPES[user_type]["is_patient"],
-            "is_assistant": USER_TYPES[user_type]["is_assistant"],
             "is_person": True,
             "code": generated_code,
             "active": True,
@@ -386,8 +322,7 @@ def register_user(user_type: str, data: dict, db: Session = Depends(get_db)):
 
             if not health_prof_result:
                 raise HTTPException(status_code=500, detail="Failed to create health professional record")
-            
-            insert_res_user_res_group(user_id, "Health Doctor", db)
+
             health_prof_id = health_prof_result[0]
 
         # Step 4: Insert into `gnuhealth_patient` if user is a patient
@@ -406,21 +341,7 @@ def register_user(user_type: str, data: dict, db: Session = Depends(get_db)):
             if not patient_result:
                 raise HTTPException(status_code=500, detail="Failed to create patient record")
 
-            insert_res_user_res_group(user_id, "Patient", db)
             patient_id = patient_result[0]
-
-        # Step 5: Insert into `gnuhealth_dr-assistant` if user is a dr-assistant
-        elif user_type == "dr-assistant":
-            insert_res_user_res_group(user_id, "Health Doctor", db)
-        
-        # Step 6: Insert into `gnuhealth_nurse` if user is a nurse
-        elif user_type == "nurse":
-            insert_res_user_res_group(user_id, "Health Nursing", db)
-  
-        # Step 7: Insert into `gnuhealth_user` if user is a user
-        elif user_type == "user":
-            insert_res_user_res_group(user_id, "E-commerce", db)
-
 
         db.commit()  # Commit only if all insertions succeed
 
@@ -500,8 +421,7 @@ def register_user(user_type: str, data: dict, db: Session = Depends(get_db)):
                     "ref": reference_code,
                     "activation_date": datetime.now().strftime("%Y-%m-%d")
                 }
-            
-        elif user_type == "patient":
+        else:
             # For patient registration, return all details
             details_query = text("""
                 SELECT 
@@ -540,121 +460,7 @@ def register_user(user_type: str, data: dict, db: Session = Depends(get_db)):
                     "ref": reference_code,
                     "activation_date": datetime.now().strftime("%Y-%m-%d")
                 }
-            
-        elif user_type == "dr-assistant":
-            # For dr-assistant registration, return all details
-            details_query = text("""
-                SELECT 
-                    ru.id AS res_user_id,
-                    pp.name AS full_name,
-                    pp.gender,
-                    pp.mobile_number AS phone_number,
-                    pp.code,
-                    pp.ref,
-                    pp.activation_date,
-                    ru.login AS username,
-                    ru.email
-                FROM res_user ru
-                JOIN party_party pp ON ru.id = pp.internal_user
-                WHERE ru.id = :user_id
-            """)
-            user_details = db.execute(details_query, {"user_id": user_id}).fetchone()
-            
-            if user_details:
-                return {
-                    "success": True,
-                    "message": f"{user_type.capitalize()} registered successfully",
-                    "secret_user_id": encrypt_user_id,
-                    "user_details": dict(user_details._mapping)
-                }
-            else:
-                return {
-                    "success": True,
-                    "message": f"{user_type.capitalize()} registered successfully",
-                    "user_id": user_id,
-                    "secret_user_id": encrypt_user_id,
-                    "party_id": party_id,
-                    "code": generated_code,
-                    "ref": reference_code,
-                    "activation_date": datetime.now().strftime("%Y-%m-%d")
-                }
-            
-        elif user_type == "nurse":
-            # For nurse registration, return all details
-            details_query = text("""
-                SELECT 
-                    ru.id AS res_user_id,
-                    pp.name AS full_name,
-                    pp.gender,
-                    pp.mobile_number AS phone_number,
-                    pp.code,
-                    pp.ref,
-                    pp.activation_date,
-                    ru.login AS username,
-                    ru.email
-                FROM res_user ru
-                JOIN party_party pp ON ru.id = pp.internal_user
-                WHERE ru.id = :user_id
-            """)
-            user_details = db.execute(details_query, {"user_id": user_id}).fetchone()
-            
-            if user_details:
-                return {
-                    "success": True,
-                    "message": f"{user_type.capitalize()} registered successfully",
-                    "secret_user_id": encrypt_user_id,
-                    "user_details": dict(user_details._mapping)
-                }
-            else:
-                return {
-                    "success": True,
-                    "message": f"{user_type.capitalize()} registered successfully",
-                    "user_id": user_id,
-                    "secret_user_id": encrypt_user_id,
-                    "party_id": party_id,
-                    "code": generated_code,
-                    "ref": reference_code,
-                    "activation_date": datetime.now().strftime("%Y-%m-%d")
-                }
-            
-        elif user_type == "user":
-            # For usert registration, return all details
-            details_query = text("""
-                SELECT 
-                    ru.id AS res_user_id,
-                    pp.name AS full_name,
-                    pp.gender,
-                    pp.mobile_number AS phone_number,
-                    pp.code,
-                    pp.ref,
-                    pp.activation_date,
-                    ru.login AS username,
-                    ru.email
-                FROM res_user ru
-                JOIN party_party pp ON ru.id = pp.internal_user
-                WHERE ru.id = :user_id
-            """)
-            user_details = db.execute(details_query, {"user_id": user_id}).fetchone()
-            
-            if user_details:
-                return {
-                    "success": True,
-                    "message": f"{user_type.capitalize()} registered successfully",
-                    "secret_user_id": encrypt_user_id,
-                    "user_details": dict(user_details._mapping)
-                }
-            else:
-                return {
-                    "success": True,
-                    "message": f"{user_type.capitalize()} registered successfully",
-                    "user_id": user_id,
-                    "secret_user_id": encrypt_user_id,
-                    "party_id": party_id,
-                    "code": generated_code,
-                    "ref": reference_code,
-                    "activation_date": datetime.now().strftime("%Y-%m-%d")
-                }
-            
+
     except Exception as e:
         db.rollback()
         
@@ -689,8 +495,6 @@ def register_user(user_type: str, data: dict, db: Session = Depends(get_db)):
                             """), {"user_id": user_id})
                         db.execute(text("DELETE FROM party_party WHERE internal_user = :user_id"), {"user_id": user_id})
                         db.execute(text("DELETE FROM res_user WHERE id = :user_id"), {"user_id": user_id})
-                        db.execute(text("""DELETE FROM "res_user-res_group" WHERE "user" = :user_id"""),{"user_id": user_id})
-
                         db.commit()
                         registration_info = register_user(user_type, data, db)
                         return registration_info
@@ -739,8 +543,6 @@ def update_user_profile(
 
     # Optional doctor-specific field
     year_of_experience = data.get("year_of_experience")
-    # Optional doctor-assistant field
-    request_for_assistant = data.get("request_for_assistant")
 
     try:
         if user_type == "doctor":
@@ -766,7 +568,7 @@ def update_user_profile(
             
             user_id = party.internal_user
 
-        elif user_type == "patient":  # patient
+        else:  # patient
             # Get party_id from gnuhealth_patient
             patient_query = text("""
                 SELECT name FROM gnuhealth_patient WHERE id = :id
@@ -788,18 +590,6 @@ def update_user_profile(
                 raise HTTPException(status_code=404, detail="Party record not found")
             
             user_id = party.internal_user
-
-        elif user_type == "dr-assistant":  # doctor assistant
-
-            # Get user_id from party_party
-            party_query = text("""
-                SELECT id FROM party_party WHERE internal_user = :id
-            """)
-            party_id = db.execute(party_query, {"party_id": id}).fetchone()
-            
-            if not party_id:
-                raise HTTPException(status_code=404, detail="Party record not found")
-
 
         # 1. Update party_party
         db.execute(text("""

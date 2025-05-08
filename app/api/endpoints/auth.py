@@ -60,22 +60,28 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     # Debugging
     print(f"🔹 Internal User (res_user.id): {internal_user}")
 
-    # Fetch party information for role determination
-    party_query = text("SELECT is_healthprof, is_patient FROM party_party WHERE internal_user = :internal_user")
-    party_info = db.execute(party_query, {"internal_user": internal_user}).fetchone()
 
-    if not party_info:
-        raise HTTPException(status_code=401, detail="Party information not found")
+    group = text("""select ru.id, rurg.group, rg.name
+                    from res_user ru
+                    join "res_user-res_group" rurg on ru.id = rurg.user
+                    join res_group rg on rurg.group = rg.id
+                    where ru.id = :user_id""")
+    
+    group_result = db.execute(group, {"user_id": user.id}).fetchall()
+    
+    group_list = [{"id": row.id, "group_id": row.group, "group_name": row.name} for row in group_result]
 
-    is_healthprof, is_patient = party_info
+    group_role = group_result[0].name if group_result else None
 
     role = "unknown"
 
-    # Check if the user is a health professional (doctor)
-    if is_healthprof:
-        role = "doctor"
-    elif is_patient:
-        role = "patient"
+    if group_role is not None:
+        group_role = group_role.split(" ")
+
+        if len(group_role)>=1:
+            role = group_role[-1]
+        else:
+            role = group_role
 
     user_data = {
         "id": user.id,
@@ -84,21 +90,123 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         "role": role
     }
 
+
     token = create_jwt_token(user_data)
 
     return {
         "status": "Congratulation Login Successfully !!!",
         "access_token": token,
         "token_type": "bearer",
-        "user": user_data
+        "user": user_data,
+        "group": group_list
     }
 
 
 
 @router.get("/me")
-def get_current_user(token: str = Depends(oauth2_scheme)):
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     user_data = decode_jwt_token(token)
-    return {"user": user_data}
+    user_id = user_data.get("id")
+
+    # Get user type and details
+    user_type = text("""
+        SELECT 
+            pp.id,
+            CASE 
+                WHEN pp.is_healthprof THEN gh.id 
+                ELSE NULL 
+            END AS healthprof_id,
+            CASE 
+                WHEN pp.is_patient THEN gp.id 
+                ELSE NULL 
+            END AS patient_id,
+            pp.is_healthprof, 
+            pp.is_patient
+        FROM res_user ru
+        JOIN party_party pp ON pp.internal_user = ru.id
+        LEFT JOIN gnuhealth_healthprofessional gh ON pp.id = gh.name
+        LEFT JOIN gnuhealth_patient gp ON pp.id = gp.name
+        WHERE ru.id = :user;
+    """)
+    user_types = db.execute(user_type, {"user": user_id}).fetchone()
+    
+    if not user_types:
+        return {"user": user_data}
+
+    is_healthprofs, is_patients = user_types.is_healthprof, user_types.is_patient
+
+    # Get detailed user information based on type
+    if is_healthprofs:
+        details_query = text("""
+            SELECT 
+                ghp.id AS healthprof_id,
+                pp.name AS full_name,
+                pp.gender,
+                pp.mobile_number AS phone_number,
+                pp.code,
+                pp.ref,
+                pp.activation_date,
+                ghp.year_of_experience,
+                ru.login AS username,
+                ru.email,
+                gdu.address_city,
+                gdu.address_municipality,
+                gdu.address_street,
+                gdu.address_street_bis,
+                gdu.address_street_number,
+                gdu.address_zip
+            FROM gnuhealth_healthprofessional ghp
+            JOIN party_party pp ON ghp.name = pp.id
+            JOIN res_user ru ON pp.internal_user = ru.id
+            LEFT JOIN gnuhealth_du gdu ON pp.du = gdu.id
+            WHERE ghp.id = :id
+        """)
+        result = db.execute(details_query, {"id": user_types.healthprof_id}).fetchone()
+    else:  # patient
+        details_query = text("""
+            SELECT 
+                gp.id AS patient_id,
+                pp.name AS full_name,
+                pp.gender,
+                pp.mobile_number AS phone_number,
+                pp.code,
+                pp.ref,
+                pp.activation_date,
+                ru.login AS username,
+                ru.email,
+                gdu.address_city,
+                gdu.address_municipality,
+                gdu.address_street,
+                gdu.address_street_bis,
+                gdu.address_street_number,
+                gdu.address_zip
+            FROM gnuhealth_patient gp
+            JOIN party_party pp ON gp.name = pp.id
+            JOIN res_user ru ON pp.internal_user = ru.id
+            LEFT JOIN gnuhealth_du gdu ON pp.du = gdu.id
+            WHERE gp.id = :id
+        """)
+        result = db.execute(details_query, {"id": user_types.patient_id}).fetchone()
+
+    # Get user groups
+    group = text("""select ru.id, rurg.group, rg.name
+                    from res_user ru
+                    join "res_user-res_group" rurg on ru.id = rurg.user
+                    join res_group rg on rurg.group = rg.id
+                    where ru.id = :user_id""")
+    
+    group_result = db.execute(group, {"user_id": user_id}).fetchall()
+    group_list = [{"id": row.id, "group_id": row.group, "group_name": row.name} for row in group_result]
+
+    # Combine all information
+    response = {
+        "user": user_data,  # Keep existing user data
+        "user_details": dict(result._mapping) if result else {},
+        "groups": group_list,
+        "user_type": "Doctor" if is_healthprofs else "Patient" if is_patients else "Unknown"
+    }
+
+    return response
 
 
 

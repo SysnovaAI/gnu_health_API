@@ -21,7 +21,6 @@ class PrescriptionUpdate(BaseModel):
     med_tests: Optional[Dict] = None
     medicine: Optional[Dict] = None
     remarks: Optional[Dict] = None
-    medical_history: Optional[Dict] = None
 
 # Add doctor authentication check
 async def verify_doctor(user: dict = Depends(get_current_user)):
@@ -37,7 +36,7 @@ async def save_prescription(
     appointment_id: int,
     update_data: PrescriptionUpdate,
     db: Session = Depends(get_db),
-    user: dict = Depends(verify_doctor)
+    user: dict = Depends(get_current_user)
 ):
     try:
         # First get the appointment details including status
@@ -256,37 +255,6 @@ async def save_prescription(
                     }
                 )
 
-        # Update medical history if provided
-        if update_data.medical_history:
-            # Get patient ID from appointment
-            patient_query = text("""
-                SELECT patient FROM gnuhealth_appointment
-                WHERE id = :appointment_id
-            """)
-            patient_result = db.execute(patient_query, {"appointment_id": appointment_id}).fetchone()
-            
-            if patient_result:
-                patient_id = patient_result.patient
-                
-                # Update medical history
-                medical_history_update_query = text("""
-                    UPDATE gnuhealth_patient
-                    SET 
-                        general_info = :general_info,
-                        write_date = CURRENT_TIMESTAMP,
-                        write_uid = :write_uid
-                    WHERE id = :patient_id
-                """)
-                
-                # Prepare the parameters
-                params = {
-                    "patient_id": patient_id,
-                    "write_uid": user.get('id'),
-                    "general_info": update_data.medical_history.get('general_info', '')
-                }
-                
-                db.execute(medical_history_update_query, params)
-
         # Update medical tests and medicines if provided
         if update_data.med_tests is not None or update_data.medicine is not None:
             try:
@@ -371,25 +339,24 @@ async def save_prescription(
                             create_patient_test_query = text("""
                                 INSERT INTO gnuhealth_patient_lab_test (
                                     prescription,
-                                    name
+                                    name,
+                                    test_critearea_id
                                 )
                                 VALUES (
                                     :prescription_id,
-                                    :test_id
+                                    :test_id,
+                                    :test_critearea_id
                                 )
                             """)
                             db.execute(
                                 create_patient_test_query,
                                 {
                                     "prescription_id": result.id,
-                                    "test_id": test_type.id
+                                    "test_id": test_type.id,
+                                    "test_critearea_id": test_critearea_id_str
                                 }
                             )
-                            logger.debug(f"Added test: {test_name}")
-
-                            # Store criteria in a separate table or field if needed
-                            if test_critearea_id_str:
-                                logger.debug(f"Test criteria: {test_critearea_id_str}")
+                            logger.debug(f"Added test: {test_name} with criteria ids: {test_critearea_id_str}")
 
                 # Handle medicines if provided
                 if update_data.medicine is not None:

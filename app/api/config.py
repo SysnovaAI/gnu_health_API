@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     # Added Keys
     BREVO_API_KEY: str = os.getenv("BREVO_API_KEY", "")
     USER_ID_PASSWORD: str = os.getenv("USER_ID_PASSWORD", "")
+    BASE_URL_blog: str = os.getenv("BASE_URL_blog", "")
     
     class Config:
         case_sensitive = True

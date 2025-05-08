@@ -1,0 +1,213 @@
+{
+  "info": {
+    "_postman_id": "product-api-collection-v2",
+    "name": "Product API Collection",
+    "description": "Collection for testing all product-related endpoints (using product id 434, type 'tablet')",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Add Product",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Paracetamol\",\n  \"code\": \"PCT-434\",\n  \"product_type\": \"tablet\",\n  \"price\": 50.00,\n  \"buying_price\": 30.00,\n  \"supplier_company\": \"Test Supplier\",\n  \"quantity\": 100,\n  \"category\": 1,\n  \"description\": \"Pain relief tablet\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/products/",
+          "host": ["{{base_url}}"],
+          "path": ["products", ""]
+        }
+      }
+    },
+    {
+      "name": "Fetch Product by ID",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/products/434",
+          "host": ["{{base_url}}"],
+          "path": ["products", "434"]
+        }
+      }
+    },
+    {
+      "name": "Update Product",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Paracetamol Updated\",\n  \"code\": \"PCT-434\",\n  \"product_type\": \"tablet\",\n  \"price\": 55.00,\n  \"buying_price\": 32.00,\n  \"supplier_company\": \"Updated Supplier\",\n  \"quantity\": 120,\n  \"category\": 2,\n  \"description\": \"Updated pain relief tablet\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/products/434",
+          "host": ["{{base_url}}"],
+          "path": ["products", "434"]
+        }
+      }
+    },
+    {
+      "name": "Delete Product",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/products/434",
+          "host": ["{{base_url}}"],
+          "path": ["products", "434"]
+        }
+      }
+    },
+    {
+      "name": "Fetch All Products",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/products/",
+          "host": ["{{base_url}}"],
+          "path": ["products", ""]
+        }
+      }
+    },
+    {
+      "name": "Update Product Stock",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"quantity\": 150\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/products/434/stock",
+          "host": ["{{base_url}}"],
+          "path": ["products", "434", "stock"]
+        }
+      }
+    },
+    {
+      "name": "Fetch Products by Code",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/products/by_code/PCT-434",
+          "host": ["{{base_url}}"],
+          "path": ["products", "by_code", "PCT-434"]
+        }
+      }
+    },
+    {
+      "name": "Fetch Products by Type",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/products/by_type/tablet",
+          "host": ["{{base_url}}"],
+          "path": ["products", "by_type", "tablet"]
+        }
+      }
+    },
+    {
+      "name": "Fetch Products by Category",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/products/by_category/1",
+          "host": ["{{base_url}}"],
+          "path": ["products", "by_category", "1"]
+        }
+      }
+    },
+    {
+      "name": "Fetch Stock History",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/products/434/stock_history",
+          "host": ["{{base_url}}"],
+          "path": ["products", "434", "stock_history"]
+        }
+      }
+    },
+    {
+      "name": "Get All Companies",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/products/companies/",
+          "host": ["{{base_url}}"],
+          "path": ["products", "companies", ""]
+        }
+      }
+    },
+    {
+      "name": "Get All Categories",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/products/categories/",
+          "host": ["{{base_url}}"],
+          "path": ["products", "categories", ""]
+        }
+      }
+    },
+    {
+      "name": "Add Supplier",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"New Supplier\",\n  \"currency\": 1,\n  \"timezone\": \"Asia/Dhaka\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/products/suppliers/",
+          "host": ["{{base_url}}"],
+          "path": ["products", "suppliers", ""]
+        }
+      }
+    },
+    {
+      "name": "Search Products by Company",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/products/by_company/?company_id=1&company_name=Test%20Supplier",
+          "host": ["{{base_url}}"],
+          "path": ["products", "by_company", ""],
+          "query": [
+            { "key": "company_id", "value": "1" },
+            { "key": "company_name", "value": "Test Supplier" }
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000/api",
+      "type": "string"
+    }
+  ]
+} 

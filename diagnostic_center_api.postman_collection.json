@@ -1,0 +1,119 @@
+{
+  "info": {
+    "name": "Diagnostic Center API Collection",
+    "description": "Collection for testing Diagnostic Center API endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Institute Names",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/diagnostic-center/institute/names",
+          "host": ["{{base_url}}"],
+          "path": ["diagnostic-center", "institute", "names"]
+        },
+        "description": "Get list of diagnostic institutes"
+      }
+    },
+    {
+      "name": "Health Professional Names",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/diagnostic-center/healthprof/names",
+          "host": ["{{base_url}}"],
+          "path": ["diagnostic-center", "healthprof", "names"]
+        },
+        "description": "Get list of health professionals"
+      }
+    },
+    {
+      "name": "Context Categories",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/diagnostic-center/context/context-category",
+          "host": ["{{base_url}}"],
+          "path": ["diagnostic-center", "context", "context-category"]
+        },
+        "description": "Get list of pathology categories and their main categories"
+      }
+    },
+    {
+      "name": "Prescriptions",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/diagnostic-center/prescriptions/pres?appointment_id=1",
+          "host": ["{{base_url}}"],
+          "path": ["diagnostic-center", "prescriptions", "pres"],
+          "query": [
+            {
+              "key": "appointment_id",
+              "value": "1",
+              "description": "ID of the appointment"
+            }
+          ]
+        },
+        "description": "Get prescription details for a specific appointment"
+      }
+    },
+    {
+      "name": "Lab Test Order Request",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"appointment_id\": 1,\n    \"health_prof_id\": 1,\n    \"source\": \"doctor\",\n    \"urgent\": true,\n    \"tests\": [\n        {\n            \"test_id\": 1,\n            \"subclass_test_ids\": [1, 2, 3]\n        }\n    ],\n    \"context\": 1\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/diagnostic-center/requests-lab-test-order-post",
+          "host": ["{{base_url}}"],
+          "path": ["diagnostic-center", "requests-lab-test-order-post"]
+        },
+        "description": "Create a new lab test order request"
+      }
+    },
+    {
+      "name": "Lab Test Requests",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/diagnostic-center/requests/lab-test",
+          "host": ["{{base_url}}"],
+          "path": ["diagnostic-center", "requests", "lab-test"]
+        },
+        "description": "Get all lab test requests"
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "your_jwt_token_here",
+      "type": "string"
+    }
+  ]
+} 
